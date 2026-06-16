@@ -166,7 +166,7 @@ type Notifier interface {
 }
 ```
 
-**Phase 1 notifier options (pick one first):**
+**Phase 2 notifier options (implemented):**
 
 - `ExecNotifier` — run a local shell command (e.g. `aplay` beep)
 - `LogNotifier` — loud structured log (dev fallback)

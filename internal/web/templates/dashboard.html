@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="refresh" content="5">
+  <title>SleepGuard — {{.Device}}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1.5rem; background: #0f172a; color: #e2e8f0; }
+    h1 { margin-bottom: 0.25rem; }
+    .meta { color: #94a3b8; margin-bottom: 1.5rem; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+    .card { background: #1e293b; border-radius: 8px; padding: 1rem; }
+    .card strong { display: block; font-size: 1.4rem; margin-top: 0.25rem; }
+    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; overflow: hidden; }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #334155; }
+    th { background: #334155; }
+    .active { color: #4ade80; }
+    .idle { color: #94a3b8; }
+    a { color: #38bdf8; }
+  </style>
+</head>
+<body>
+  <h1>SleepGuard</h1>
+  <p class="meta">Device: {{.Device}} · Uptime: {{.Uptime}} · Alert state: {{.AlertState}}</p>
+
+  <div class="stats">
+    <div class="card">Motion events<strong>{{.MotionCount}}</strong></div>
+    <div class="card">Alerts sent<strong>{{.AlertCount}}</strong></div>
+    <div class="card">Events stored<strong>{{.EventCount}}</strong></div>
+  </div>
+
+  <p><a href="/events">JSON events</a> · <a href="/status">Status JSON</a> · <a href="/health">Health</a></p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>State</th>
+        <th>Pattern</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Events}}
+      <tr>
+        <td>{{.Timestamp}}</td>
+        <td class="{{.State}}">{{.State}}</td>
+        <td>{{.Pattern}}</td>
+        <td>{{.Source}}</td>
+      </tr>
+      {{else}}
+      <tr><td colspan="4">No events yet. Wave in front of the PIR sensor.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</body>
+</html>

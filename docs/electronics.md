@@ -112,7 +112,7 @@ Parts list and wiring reference. Use this to verify you have everything before e
 ### GPIO numbering
 
 - Use **BCM / GPIO numbering** in software (GPIO17), not physical pin number alone.
-- Config flag planned: `-gpio-pin 17` or env `SLEEPGUARD_GPIO_PIN=17`.
+- Config flag: `-gpio-pin 17` (default)
 
 ### Before powering on
 
@@ -120,6 +120,28 @@ Parts list and wiring reference. Use this to verify you have everything before e
 - [ ] OUT goes to a GPIO input only, not 5 V or GND
 - [ ] No short between VCC and GND
 - [ ] Jumper wires firmly seated
+- [ ] Breadboard: pins on **opposite sides of the center gap are not connected**
+- [ ] **Do not use GPIO2 (physical pin 3)** — on this Pi it reads HIGH due to hardware pull-up
+
+### Verified wiring (SleepGuard Pi — Phase 1)
+
+| Wire color | PIR / function | Pi connection |
+|------------|----------------|---------------|
+| Orange | VCC (+5 V) | Pin 4 (5 V) |
+| Gray | GND | Pin 6 (GND) |
+| White | OUT | Pin 11 (GPIO17) |
+
+HC-SR501 module settings that worked:
+
+- Jumper on **H** (repeat trigger)
+- **Time Delay** pot fully **counter-clockwise** (otherwise OUT can stay HIGH)
+- Allow **~60 s** warm-up after power-on
+
+Diagnostic on Pi:
+
+```bash
+watch -n 0.2 pinctrl get 17
+```
 
 ---
 

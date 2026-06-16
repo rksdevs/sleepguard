@@ -11,16 +11,18 @@ type Mock struct {
 	source        string
 	interval      time.Duration
 	log           *slog.Logger
+	onEvent       EventHandler
 	active        bool
 	firstEmission bool
 }
 
 // NewMock returns a reader that emits alternating motion states.
-func NewMock(source string, interval time.Duration, log *slog.Logger) *Mock {
+func NewMock(source string, interval time.Duration, log *slog.Logger, onEvent EventHandler) *Mock {
 	return &Mock{
 		source:   source,
 		interval: interval,
 		log:      log,
+		onEvent:  onEvent,
 	}
 }
 
@@ -78,6 +80,9 @@ func (m *Mock) emit(active bool) {
 
 	event := NewObservedEvent(EventMotion, m.source, state, pattern)
 	m.log.Info(msg, "event", event.String())
+	if m.onEvent != nil {
+		m.onEvent(event)
+	}
 	m.firstEmission = true
 	m.active = !m.active
 }

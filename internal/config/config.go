@@ -21,6 +21,8 @@ type Config struct {
 	CameraEnabled bool
 	SnapshotDir   string
 	MockSensor    bool
+	AlertCommand  string
+	StoreCapacity int
 }
 
 // Load parses flags and returns the application configuration.
@@ -38,6 +40,8 @@ func Load() (Config, error) {
 	flag.BoolVar(&cfg.CameraEnabled, "camera", false, "enable camera snapshots (phase 4)")
 	flag.StringVar(&cfg.SnapshotDir, "snapshot-dir", "data/snapshots", "directory for motion snapshots")
 	flag.BoolVar(&cfg.MockSensor, "mock-sensor", false, "use simulated sensor (dev machine without GPIO)")
+	flag.StringVar(&cfg.AlertCommand, "alert-cmd", "", "optional shell command to run on motion alert (e.g. aplay)")
+	flag.IntVar(&cfg.StoreCapacity, "store-capacity", 100, "maximum in-memory events to retain")
 
 	flag.Parse()
 
@@ -85,5 +89,7 @@ func (c Config) LogAttrs() []any {
 		"camera_enabled", c.CameraEnabled,
 		"snapshot_dir", c.SnapshotDir,
 		"mock_sensor", c.MockSensor,
+		"alert_cmd", c.AlertCommand,
+		"store_capacity", c.StoreCapacity,
 	}
 }

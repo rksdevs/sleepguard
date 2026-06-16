@@ -18,13 +18,14 @@ type PIR struct {
 	pollInterval   time.Duration
 	reportInterval time.Duration
 	log            *slog.Logger
+	onEvent        EventHandler
 	lastReport     time.Time
 	previouslyHigh bool
 	initialized    bool
 }
 
 // NewPIR configures GPIO and returns a PIR reader.
-func NewPIR(source string, pinNumber int, pollInterval, reportInterval time.Duration, log *slog.Logger) (*PIR, error) {
+func NewPIR(source string, pinNumber int, pollInterval, reportInterval time.Duration, log *slog.Logger, onEvent EventHandler) (*PIR, error) {
 	if _, err := host.Init(); err != nil {
 		return nil, fmt.Errorf("init periph host: %w", err)
 	}
@@ -45,6 +46,7 @@ func NewPIR(source string, pinNumber int, pollInterval, reportInterval time.Dura
 		pollInterval:   pollInterval,
 		reportInterval: reportInterval,
 		log:            log,
+		onEvent:        onEvent,
 	}, nil
 }
 
@@ -115,7 +117,9 @@ func (p *PIR) emit(active bool, pattern, message string) {
 
 	event := NewObservedEvent(EventMotion, p.source, state, pattern)
 	p.log.Info(message, "event", event.String())
-	p.previouslyHigh = active
+	if p.onEvent != nil {
+		p.onEvent(event)
+	}
 }
 
 func (p *PIR) readMotion() (bool, error) {

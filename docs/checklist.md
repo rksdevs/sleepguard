@@ -17,7 +17,7 @@ Action items to run on the **Pi 4** after code is ready for each phase.
 | 0.4 | Hostname or static IP noted (e.g. `192.168.1.x`) | [x] | `192.168.0.103` (current network) |
 | 0.5 | Go 1.24+ installed on Pi (`go version`) | [x] | |
 | 0.6 | Git clone repo on Pi (or `scp` binary) | [x] | `git clone` OK |
-| 0.7 | PIR sensor wired per [electronics.md](electronics.md) | [ ] | Do not power GPIO until wiring checked |
+| 0.7 | PIR sensor wired per [electronics.md](electronics.md) | [x] | GPIO17 (pin 11); see Phase 1 notes |
 | 0.8 | Pi Camera Module v2 connected (ribbon seated) | [ ] | Phase 4 — hardware ready, enable in raspi-config later |
 
 ---
@@ -42,24 +42,25 @@ Action items to run on the **Pi 4** after code is ready for each phase.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.1 | Pull latest + `go build ./...` on Pi | [ ] | `git pull` then build — needs periph deps |
-| 2.2 | Add user to gpio group: `sudo usermod -aG gpio rksdevs` then re-login | [ ] | Required for GPIO access |
-| 2.3 | Confirm PIR wiring: VCC→5V, GND→GND, OUT→GPIO17 (pin 11) | [ ] | Power off while wiring |
-| 2.4 | Run: `go run ./cmd/sleepguard -device nursery -alert-cooldown 45s -debug` | [ ] | Runs until Ctrl+C — no `-mock-sensor` on Pi |
-| 2.5 | Wait ~60 s (PIR warm-up), wave hand — log shows `motion_detected` | [ ] | |
-| 2.6 | Hold still — no repeated spam within cooldown window | [ ] | |
+| 2.1 | Pull latest + `go build ./...` on Pi | [x] | `git pull` then build — periph deps OK |
+| 2.2 | Add user to gpio group: `sudo usermod -aG gpio rksdevs` then re-login | [x] | Required for GPIO access |
+| 2.3 | Confirm PIR wiring: VCC→5V, GND→GND, OUT→GPIO17 (pin 11) | [x] | Orange→pin 4, Gray→pin 6, White→pin 11 |
+| 2.4 | Run: `go run ./cmd/sleepguard -device nursery -report-interval 5s -debug` | [x] | Runs until Ctrl+C — no `-mock-sensor` on Pi |
+| 2.5 | Wait ~60 s (PIR warm-up), wave hand — log shows `motion_detected` | [x] | rise/fall/hold patterns logged |
+| 2.6 | Hold still — no repeated spam within cooldown window | [x] | `report-interval` controls hold logs only |
 | 2.7 | Unplug OUT wire — app logs `sensor_error`, does not crash | [ ] | Optional test |
-| 2.8 | Document GPIO pin used in Notes below | [ ] | Default: GPIO17 |
+| 2.8 | Document GPIO pin used in Notes below | [x] | GPIO17 (BCM), physical pin 11 |
 
-**Phase 1 gate:** Reliable motion logs on Pi without event spam.
+**Phase 1 gate:** Reliable motion logs on Pi without event spam. **Passed.**
 
 ### Your notes (Phase 1)
 
 ```
 Pi IP: 192.168.0.103
-GPIO pin used:
-Cooldown tested (seconds):
-Issues:
+GPIO pin used: GPIO17 (BCM) / physical pin 11 — do NOT use GPIO2 (pin 3); bad pull-up on this board
+Cooldown tested (seconds): 30s default; alert cooldown separate in Phase 2
+PIR module: jumper on H (repeat trigger); Time Delay knob fully CCW or sensor stuck HIGH
+Issues resolved: breadboard center gap; wrong pin counting; GPIO2 always HIGH
 ```
 
 ---
@@ -70,14 +71,26 @@ Issues:
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.1 | Build and run app; confirm it listens on `:8080` | [ ] | `ss -tlnp` or `curl localhost:8080/health` |
-| 3.2 | From phone (same LAN): open `http://<pi-ip>:8080/health` | [ ] | |
-| 3.3 | Trigger motion — `/events` returns JSON with new event | [ ] | |
-| 3.4 | Dashboard `/` shows readable event list | [ ] | |
-| 3.5 | Alert fires (sound/exec) on motion | [ ] | Describe method used |
-| 3.6 | Firewall: port 8080 allowed if ufw enabled | [ ] | `sudo ufw allow 8080` if needed |
+| 3.0 | `git pull` on Pi, then `go build ./...` | [ ] | Phase 2 adds `internal/web`, `internal/alert`, `internal/store` |
+| 3.1 | Run: `go run ./cmd/sleepguard -device nursery -report-interval 5s -debug` | [ ] | HTTP + sensor run together; listens on `:8080` |
+| 3.2 | Confirm listen: `curl -s localhost:8080/health` | [ ] | Expect `{"status":"ok"}` |
+| 3.3 | From phone (same LAN): open `http://192.168.0.103:8080/` | [ ] | Dashboard auto-refreshes every 5 s |
+| 3.4 | Trigger motion — `curl -s localhost:8080/events` shows new JSON events | [ ] | |
+| 3.5 | Dashboard `/` shows readable event list + motion/alert counts | [ ] | |
+| 3.6 | Alert fires on `motion_detected` (rise only) | [ ] | Default: loud log line; optional `-alert-cmd` |
+| 3.7 | Firewall: port 8080 allowed if ufw enabled | [ ] | `sudo ufw allow 8080` if needed |
 
 **Phase 2 gate:** Phone dashboard + working alert on motion.
+
+**Optional alert commands:**
+
+```bash
+# Default — structured log alert (no extra hardware)
+go run ./cmd/sleepguard -device nursery -report-interval 5s -debug
+
+# Shell command on each alert (if you have a .wav file)
+go run ./cmd/sleepguard -device nursery -alert-cmd "aplay /path/to/beep.wav"
+```
 
 ### Your notes (Phase 2)
 
@@ -147,9 +160,11 @@ Docker run command used:
 | Symptom | Things to check |
 |---------|-----------------|
 | `permission denied` on GPIO | Run as user in `gpio` group, or check periph docs |
-| No motion events | PIR warm-up ~60 s; wrong pin; 3.3 V vs 5 V logic |
-| Too many events | Increase cooldown; check debounce in code |
-| Cannot reach dashboard | Pi IP, firewall, same subnet, correct port |
+| GPIO always HIGH | **Do not use GPIO2 (pin 3)** on this Pi; use GPIO17. Run `pinctrl get 17` |
+| PIR stuck HIGH | Time Delay knob fully **counter-clockwise**; jumper on **H** |
+| No motion events | PIR warm-up ~60 s; breadboard center gap; wrong physical pin |
+| Too many events | Increase `-alert-cooldown`; check PIR sensitivity pot |
+| Cannot reach dashboard | Pi IP, firewall, same subnet, port 8080, app running |
 | Camera fails | `raspi-config` camera on; cable seated; test CLI first |
 | `go build` fails on Pi | `go mod tidy`; enough RAM; swap if needed |
 
@@ -162,7 +177,8 @@ Docker run command used:
 | 2026-06-16 | — | Initial checklist created. Phase 0 code exists (flags only). |
 | 2026-06-16 | — | Kit confirmed: Pi 4 4GB, HC-SR501, Camera v2, breadboard/M-F wires, 300Ω+LEDs, Wi‑Fi. |
 | 2026-06-16 | 0 | Phase 0 verified on Pi (`192.168.0.103`). |
-| 2026-06-16 | 1 | Phase 1 coded: PIR reader, mock sensor, cooldown, motion logs. Pull + wire PIR. |
+| 2026-06-16 | 1 | Phase 1 coded: PIR reader, mock sensor, pattern logs. Pi verified on GPIO17. |
+| 2026-06-16 | 2 | Phase 2 coded: HTTP server, in-memory store, alert manager, dashboard. Pull + verify on Pi. |
 
 ---
 

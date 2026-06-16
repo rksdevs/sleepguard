@@ -30,16 +30,16 @@ Phase-by-phase development plan for portfolio delivery. Each phase ends with a *
 
 **Goal:** Read PIR motion on the Pi and emit debounced events to stdout/logs.
 
-**Status:** Code complete — Pi wiring + verification pending.
+**Status:** Complete on Pi (GPIO17, HC-SR501 verified).
 
 | Task | Package / area | Deliverable |
 |------|----------------|-------------|
-| Sensor interface | `internal/sensor/sensor.go` | `Reader` interface + `Event` type |
+| Sensor interface | `internal/sensor/reader.go` | `Reader` interface + `EventHandler` callback |
 | Mock reader | `internal/sensor/mock.go` | Dev machine testing without hardware |
 | PIR reader | `internal/sensor/pir.go` | GPIO poll via `periph.io` |
-| Debounce + cooldown | `internal/sensor/pir.go` | One event per motion burst |
-| Wire in main | `cmd/sleepguard/main.go` | Loop or goroutine reading sensor |
-| Logging | all | `motion_detected`, `cooldown_skipped`, `sensor_error` |
+| Pattern reporting | `internal/sensor/pir.go` | rise / fall / hold / initial states |
+| Wire in main | `cmd/sleepguard/main.go` | Goroutine reading sensor |
+| Logging | all | `motion_detected`, `motion_ended`, `motion_idle`, `sensor_error` |
 
 **Dependencies:** `periph.io/x/host/v3`, `periph.io/x/conn/v3/gpio`
 
@@ -53,16 +53,19 @@ Phase-by-phase development plan for portfolio delivery. Each phase ends with a *
 
 **Goal:** LAN-accessible web UI and at least one real alert channel.
 
+**Status:** Code complete — Pi verification pending.
+
 | Task | Package / area | Deliverable |
 |------|----------------|-------------|
 | HTTP server | `internal/web/server.go` | Listen on `:8080` (configurable) |
-| Health endpoints | `internal/web/handlers.go` | `/health`, `/status` |
-| Events API | `internal/web/handlers.go` | `GET /events` → JSON |
-| In-memory store | `internal/store/memory.go` | Thread-safe ring buffer |
-| Connect sensor → store | `main` | Events visible via API |
-| HTML dashboard | `internal/web/templates/` | Table of recent events |
-| Alert notifier | `internal/alert/notifier.go` | Local sound or exec command |
-| Alert state machine | `internal/alert/alert.go` | `idle` → `motion` → `alert_sent` → `cooldown` |
+| Health endpoints | `internal/web/server.go` | `/health`, `/status`, `/config` |
+| Events API | `internal/web/server.go` | `GET /events` → JSON |
+| In-memory store | `internal/store/memory.go` | Thread-safe ring buffer + counters |
+| Connect sensor → store | `main` | `EventHandler` appends + triggers alerts |
+| HTML dashboard | `internal/web/templates/dashboard.html` | Event table, auto-refresh 5 s |
+| Alert notifier | `internal/alert/notifier.go` | `LogNotifier` + `ExecNotifier` (`-alert-cmd`) |
+| Alert manager | `internal/alert/manager.go` | Cooldown; alerts on `PatternRise` only |
+| Concurrent runtime | `main` | HTTP server + sensor goroutines, SIGINT shutdown |
 
 **Done when:** Phone on same Wi‑Fi opens `http://<pi-ip>:8080`, sees events, and hears/sees an alert on motion.
 
@@ -157,7 +160,7 @@ Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4
 
 ## Definition of done (full MVP)
 
-- [ ] PIR motion detected on Pi with debouncing
+- [x] PIR motion detected on Pi with debouncing
 - [ ] Alert fires on motion (audible or visible)
 - [ ] LAN dashboard lists events and status
 - [ ] Events persist across restart

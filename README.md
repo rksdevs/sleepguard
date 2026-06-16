@@ -54,20 +54,17 @@ internal/alert/                 # Alert channels and state machine
 internal/store/                 # In-memory and persistent event storage
 internal/web/                   # HTTP server, routes, HTML templates
 internal/camera/                # Snapshot capture (phase 4)
-internal/telemetry/             # Counters and metrics
-internals/helpers/              # Legacy / shared types (migrate to internal/)
+internal/telemetry/             # Counters and metrics (phase 3)
 docs/                           # Architecture, plan, checklist, electronics
 ```
-
-> **Note:** New packages follow the `internal/` convention from the plan. Existing `internals/helpers/` will be migrated as the project grows.
 
 ## Current status
 
 | Phase | Status |
 |-------|--------|
 | Phase 0 — Project bootstrap | Complete |
-| Phase 1 — Sensor + GPIO | Code complete — wire PIR on Pi |
-| Phase 2 — Web dashboard + alerts | Not started |
+| Phase 1 — Sensor + GPIO | Complete on Pi (GPIO17) |
+| Phase 2 — Web dashboard + alerts | Code complete — verify on Pi |
 | Phase 3 — Concurrency + storage | Not started |
 | Phase 4 — Camera + polish | Not started |
 
@@ -81,20 +78,31 @@ cd sleepguard
 go run ./cmd/sleepguard
 ```
 
-With flags:
+With flags (mock sensor on dev machine — no GPIO):
 
 ```bash
-go run ./cmd/sleepguard -device nursery -alert-cooldown 30s -debug
+go run ./cmd/sleepguard -mock-sensor -device nursery -report-interval 5s -debug
 ```
 
 ## Quick start (Raspberry Pi 4)
 
 1. Install Go 1.24+ on the Pi (or cross-compile from your dev machine).
-2. Wire the PIR sensor per [docs/electronics.md](docs/electronics.md).
+2. Wire the PIR sensor per [docs/electronics.md](docs/electronics.md) — **GPIO17 (pin 11)**.
 3. Follow [docs/checklist.md](docs/checklist.md) for each phase.
-4. Run the binary and open `http://<pi-ip>:8080` from a phone or laptop on the same LAN.
+4. Run the app and open the dashboard from a phone or laptop on the same LAN:
 
-Detailed Pi setup steps are added to the checklist as each phase is implemented.
+```bash
+cd ~/sleepguard && git pull
+go run ./cmd/sleepguard -device nursery -report-interval 5s -debug
+# Dashboard: http://<pi-ip>:8080
+# Health:     curl localhost:8080/health
+```
+
+Optional audible alert via shell command:
+
+```bash
+go run ./cmd/sleepguard -device nursery -alert-cmd "aplay /path/to/beep.wav"
+```
 
 ## Documentation
 
