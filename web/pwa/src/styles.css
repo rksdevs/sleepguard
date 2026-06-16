@@ -463,8 +463,39 @@ button.secondary:hover {
   background: #111;
 }
 
+.snapshot-lightbox-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+}
+
 .snapshot-lightbox-time {
-  margin: 0.6rem 0 0.75rem;
+  margin: 0;
+  flex: 1;
+  font-size: 0.82rem;
+}
+
+.snapshot-download-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: var(--surface-hover);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.snapshot-download-btn:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
 }
 
 .admin-card {

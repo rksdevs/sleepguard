@@ -51,9 +51,15 @@ export function openSnapshotLightbox(thumb: SnapshotThumb): void {
     <div class="snapshot-lightbox-panel" role="dialog" aria-modal="true" aria-label="Snapshot preview">
       <button type="button" class="snapshot-lightbox-close" aria-label="Close">&times;</button>
       <img src="${thumb.url}" alt="Nursery snapshot" />
-      <p class="muted snapshot-lightbox-time"></p>
-      <div class="actions">
-        <a class="button secondary" id="snapshot-download" download>Download</a>
+      <div class="snapshot-lightbox-footer">
+        <p class="muted snapshot-lightbox-time"></p>
+        <a class="snapshot-download-btn" id="snapshot-download" download aria-label="Download image">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3v12"/>
+            <path d="m7 10 5 5 5-5"/>
+            <path d="M5 21h14"/>
+          </svg>
+        </a>
       </div>
     </div>
   `;
