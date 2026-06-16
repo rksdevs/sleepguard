@@ -76,7 +76,50 @@ sudo nginx -t && sudo systemctl reload nginx
 curl -s https://sleepguard.rksdevs.in/health
 ```
 
-Phase B: serve PWA from `/data/sleepguard/web/pwa/dist` and proxy `/api/` to 8090.
+Phase B: serve PWA from `/data/sleepguard/web/pwa/dist` and proxy `/api/` to 8090 (edit existing nginx site after certbot).
+
+#### Phase B — PWA + nginx update
+
+Build on server:
+
+```bash
+cd /data/sleepguard
+git pull
+bash deploy/build-pwa.sh
+```
+
+Edit `/etc/nginx/sites-available/sleepguard.rksdevs.in` — inside the `server { listen 443 ssl; ... }` block, replace the single `location /` proxy with:
+
+```nginx
+client_max_body_size 25M;
+root /data/sleepguard/web/pwa/dist;
+index index.html;
+
+location /api/ {
+    proxy_pass http://127.0.0.1:8090/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /health {
+    proxy_pass http://127.0.0.1:8090/health;
+}
+
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Open `https://sleepguard.rksdevs.in` in a browser (Cloudflare challenge once), enter read API key from `.env`, device id `nursery`.
+
+**Cloudflare orange proxy:** browser PWA works after challenge. Pi agent (phase C) will need a WAF skip rule for `/api/v1/events` or API token bypass.
 
 Snapshots (phase F): `/data/sleepguard/data/snapshots`
 

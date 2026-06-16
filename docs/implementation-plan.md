@@ -119,7 +119,7 @@ sleepguard/
 
 **Goal:** Deployable cloud service that accepts and stores events.
 
-**Status:** Code complete — deploy and verify on Hetzner.
+**Status:** Complete on Hetzner.
 
 | Task | Deliverable |
 |------|-------------|
@@ -142,15 +142,18 @@ sleepguard/
 
 **Goal:** Browser UI on Hetzner showing motion events without touching the Pi dashboard.
 
+**Status:** Code complete — build on server and update nginx.
+
 | Task | Deliverable |
 |------|-------------|
-| `web/pwa/` | Scaffold (Vite + minimal UI) |
-| Event log page | Newest first, auto-refresh (poll 2–5 s or SSE) |
-| Device status | Online if heartbeat &lt; 2 min |
-| Auth v1 | Simple shared PIN or basic auth behind Caddy (family-only) |
-| Static deploy | `dist/` served at `/`, API at `/api/` |
+| `web/pwa/` | Vite + TypeScript, installable manifest |
+| Event log page | Newest first, poll every 3 s |
+| Device status | Online badge, event count, last seen |
+| Auth v1 | Read API key in UI → sessionStorage |
+| `deploy/build-pwa.sh` | Server build script |
+| nginx | PWA static + `/api/` proxy (deploy README) |
 
-**Done when:** Open PWA from India, see events ingested via `curl` (before Pi is connected).
+**Done when:** Open PWA from browser, enter read key, see events.
 
 ---
 

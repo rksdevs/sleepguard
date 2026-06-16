@@ -92,7 +92,21 @@ Device token stored (y/n):
 
 ---
 
-## Phase 2 — Local web dashboard (legacy)
+## Phase B — PWA (Hetzner)
+
+*Code: `web/pwa`, nginx static + API proxy. See deploy README.*
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| B.1 | `git pull` + `bash deploy/build-pwa.sh` | [ ] | Needs Node 18+ on server |
+| B.2 | Update nginx: `root` → `web/pwa/dist`, proxy `/api/` | [ ] | Keep certbot SSL block |
+| B.3 | POST test event via localhost | [ ] | |
+| B.4 | Open `https://sleepguard.rksdevs.in` in browser | [ ] | Pass Cloudflare challenge once |
+| B.5 | Enter read API key, device `nursery` — see events | [ ] | |
+
+**Phase B gate:** PWA shows live log from cloud API.
+
+---
 
 *Code: HTTP server, `/health`, `/events`, dashboard HTML, notifier.*
 

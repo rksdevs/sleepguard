@@ -1,0 +1,17 @@
+{
+  "name": "SleepGuard",
+  "short_name": "SleepGuard",
+  "description": "Baby motion monitor",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ebe6df",
+  "theme_color": "#f3efe9",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

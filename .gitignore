@@ -3,3 +3,5 @@ deploy/.env
 sleepguard
 sleepguard-cloud
 data/
+node_modules/
+web/pwa/dist/

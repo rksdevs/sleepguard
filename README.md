@@ -63,8 +63,8 @@ docs/                           # Architecture, plan, checklist, electronics
 | Phase | Status |
 |-------|--------|
 | Pi PIR (local) | Complete on GPIO17 |
-| **A — Cloud API + Postgres** | **Code complete — deploy on Hetzner** |
-| B — PWA live log | Not started |
+| **A — Cloud API + Postgres** | Complete on Hetzner |
+| **B — PWA live log** | Code complete — build + nginx on server |
 | C — Pi agent → cloud | Not started |
 | D+ — Pairing, rules, camera | Planned |
 
