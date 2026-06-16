@@ -194,6 +194,7 @@ curl -s "https://sleepguard.rksdevs.in/api/v1/events?device_id=nursery&limit=10"
 | GET | `/health` | none | Liveness |
 | POST | `/api/v1/events` | device token | Ingest motion event |
 | POST | `/api/v1/heartbeat` | device token | Update last_seen |
+| GET | `/api/v1/agent/commands` | device token | Fast poll for capture requests (~5s) |
 | GET | `/api/v1/events?device_id=&limit=` | read key or device token | List events |
 | GET | `/api/v1/devices/{id}/status` | read key or device token | Device status |
 | POST | `/api/v1/devices/{id}/capture` | read key | Queue manual snapshot (Pi must be online) |
@@ -277,8 +278,8 @@ User taps **Capture image** in the PWA (anytime; Pi must show **online**).
 ```text
 PWA → POST /api/v1/devices/{id}/capture
     → cloud queues command
-    → Pi heartbeat gets capture_snapshot: true
-    → libcamera-still (or raspistill) on Pi
+    → Pi polls GET /api/v1/agent/commands every ~5s
+    → rpicam-still on Pi
     → POST /api/v1/snapshots (multipart)
     → PWA shows latest image
 ```
@@ -294,7 +295,10 @@ rpicam-still -o ~/test.jpg -n -t 2000
 Deploy:
 
 ```bash
-# Hetzner
+# Hetzner — Docker cloud runs as uid 10001; snapshot volume must be writable
+sudo mkdir -p /data/sleepguard/data/snapshots
+sudo chown -R 10001:10001 /data/sleepguard/data/snapshots
+
 cd /data/sleepguard && git pull
 docker compose -f deploy/docker-compose.yml up -d --build
 bash deploy/build-pwa.sh
@@ -305,7 +309,7 @@ go build -o ~/sleepguard/bin/sleepguard-agent ./cmd/agent
 sudo systemctl restart sleepguard-agent
 ```
 
-Test capture: open PWA → **Capture image** → wait up to ~60s (heartbeat) → image appears.
+Test capture: open PWA → **Capture image** → image should appear within **~5–10 seconds** (command poll + camera + upload).
 
 Smoke test cycles (push):
 

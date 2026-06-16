@@ -33,6 +33,7 @@ func main() {
 		"gpio_pin", cfg.GPIOPin,
 		"queue_path", cfg.QueuePath,
 		"heartbeat_interval", cfg.HeartbeatInterval.String(),
+		"command_poll_interval", cfg.CommandPollInterval.String(),
 		"mock_sensor", cfg.MockSensor,
 		"mock_camera", cfg.MockCamera,
 		"capture_dir", cfg.CaptureDir,
@@ -89,19 +90,28 @@ func main() {
 	}
 	defer reader.Close()
 
-	runCapture := func() {
-		path := filepath.Join(cfg.CaptureDir, time.Now().UTC().Format("20060102-150405.000")+".jpg")
-		if err := camera.Capture(ctx, camCfg, path); err != nil {
-			log.Error("camera capture failed", "error", err)
-			return
-		}
-		defer os.Remove(path)
+	var captureMu sync.Mutex
 
-		if err := client.PostSnapshot(ctx, path); err != nil {
-			log.Error("snapshot upload failed", "error", err)
+	runCapture := func() {
+		if !captureMu.TryLock() {
+			log.Debug("capture already in progress")
 			return
 		}
-		log.Info("snapshot uploaded")
+		go func() {
+			defer captureMu.Unlock()
+			path := filepath.Join(cfg.CaptureDir, time.Now().UTC().Format("20060102-150405.000")+".jpg")
+			if err := camera.Capture(ctx, camCfg, path); err != nil {
+				log.Error("camera capture failed", "error", err)
+				return
+			}
+			defer os.Remove(path)
+
+			if err := client.PostSnapshot(ctx, path); err != nil {
+				log.Error("snapshot upload failed", "error", err)
+				return
+			}
+			log.Info("snapshot uploaded")
+		}()
 	}
 
 	var wg sync.WaitGroup
@@ -113,14 +123,9 @@ func main() {
 		defer ticker.Stop()
 
 		sendHeartbeat := func() {
-			resp, err := client.Heartbeat(ctx)
-			if err != nil {
+			if _, err := client.Heartbeat(ctx); err != nil {
 				log.Warn("heartbeat failed", "error", err)
 				return
-			}
-			if resp.CaptureSnapshot {
-				log.Info("capture requested from app")
-				go runCapture()
 			}
 			log.Debug("heartbeat sent")
 		}
@@ -132,6 +137,39 @@ func main() {
 				return
 			case <-ticker.C:
 				sendHeartbeat()
+			}
+		}
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		interval := cfg.CommandPollInterval
+		if interval <= 0 {
+			interval = 5 * time.Second
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		poll := func() {
+			cmds, err := client.PollCommands(ctx)
+			if err != nil {
+				log.Debug("command poll failed", "error", err)
+				return
+			}
+			if cmds.CaptureSnapshot {
+				log.Info("capture requested from app")
+				runCapture()
+			}
+		}
+
+		poll()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				poll()
 			}
 		}
 	}()

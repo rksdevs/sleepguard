@@ -54,6 +54,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.HandleFunc("POST /api/v1/events", s.handleIngestEvent)
 	s.mux.HandleFunc("POST /api/v1/heartbeat", s.handleHeartbeat)
+	s.mux.HandleFunc("GET /api/v1/agent/commands", s.handleAgentCommands)
 	s.mux.HandleFunc("GET /api/v1/events", s.handleListEvents)
 	s.mux.HandleFunc("GET /api/v1/devices/{id}/status", s.handleDeviceStatus)
 	s.mux.HandleFunc("POST /api/v1/devices/{id}/capture", s.handleRequestCapture)
@@ -171,15 +172,9 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	captureSnapshot := false
-	if s.captures != nil {
-		captureSnapshot = s.captures.Take(deviceID)
-	}
-
 	writeJSON(w, http.StatusOK, domain.HeartbeatResponse{
-		DeviceID:        deviceID,
-		LastSeenAt:      at,
-		CaptureSnapshot: captureSnapshot,
+		DeviceID:   deviceID,
+		LastSeenAt: at,
 	})
 }
 

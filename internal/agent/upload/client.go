@@ -83,6 +83,33 @@ func (c *Client) Heartbeat(ctx context.Context) (domain.HeartbeatResponse, error
 	return resp, nil
 }
 
+// PollCommands checks for pending capture requests (fast poll, separate from heartbeat).
+func (c *Client) PollCommands(ctx context.Context) (domain.AgentCommands, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/agent/commands", nil)
+	if err != nil {
+		return domain.AgentCommands{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("User-Agent", "SleepGuard-Agent/1.0")
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return domain.AgentCommands{}, err
+	}
+	defer res.Body.Close()
+
+	b, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return domain.AgentCommands{}, fmt.Errorf("cloud returned %d: %s", res.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var resp domain.AgentCommands
+	if err := json.Unmarshal(b, &resp); err != nil {
+		return domain.AgentCommands{}, fmt.Errorf("decode commands response: %w", err)
+	}
+	return resp, nil
+}
+
 // PostSnapshot uploads a JPEG still image to the cloud.
 func (c *Client) PostSnapshot(ctx context.Context, imagePath string) error {
 	file, err := os.Open(imagePath)

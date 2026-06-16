@@ -1,14 +1,17 @@
 import {
   fetchEvents,
   fetchPairings,
-  fetchSnapshotBlob,
-  fetchSnapshots,
   fetchStatus,
   pairDevice,
   requestCapture,
   runCleanup,
   unpairDevice,
 } from "./api";
+import {
+  loadSnapshotGallery,
+  openSnapshotLightbox,
+  type SnapshotThumb,
+} from "./snapshots";
 import {
   clearPairingId,
   loadPairingId,
@@ -93,8 +96,7 @@ interface DashboardView {
   events: MotionEvent[];
   pairings: PairedClient[];
   pairingId: string | null;
-  snapshotImageUrl: string | null;
-  latestSnapshotAt: string | null;
+  snapshots: SnapshotThumb[];
   error: string | null;
   notice: string | null;
 }
@@ -112,6 +114,25 @@ function renderPairingRows(pairings: PairedClient[], localId: string | null): st
       </li>`,
     )
     .join("")}</ul>`;
+}
+
+function renderSnapshotCarousel(snapshots: SnapshotThumb[]): string {
+  if (snapshots.length === 0) {
+    return `<p class="muted" style="margin:0">No snapshots yet.</p>`;
+  }
+  return `
+    <p class="muted" style="margin:0 0 0.5rem">Recent captures — tap to enlarge or download.</p>
+    <div class="snapshot-carousel">
+      ${snapshots
+        .map(
+          (s) => `
+        <button type="button" class="snapshot-thumb" data-snapshot-id="${s.id}" aria-label="View snapshot">
+          <img src="${s.url}" alt="" loading="lazy" />
+          <span class="snapshot-thumb-time">${formatTime(s.capturedAt)}</span>
+        </button>`,
+        )
+        .join("")}
+    </div>`;
 }
 
 function renderDashboard(root: HTMLElement, view: DashboardView): void {
@@ -166,14 +187,7 @@ function renderDashboard(root: HTMLElement, view: DashboardView): void {
       <div class="actions">
         <button type="button" id="capture-btn" ${view.status.online ? "" : "disabled"}>Capture image</button>
       </div>
-      ${
-        view.snapshotImageUrl
-          ? `<figure class="snapshot-preview">
-        <img src="${view.snapshotImageUrl}" alt="Latest nursery snapshot" />
-        ${view.latestSnapshotAt ? `<figcaption class="muted">Latest — ${formatTime(view.latestSnapshotAt)}</figcaption>` : ""}
-      </figure>`
-          : `<p class="muted" style="margin:0">No snapshots yet.</p>`
-      }
+      ${renderSnapshotCarousel(view.snapshots)}
     </div>
 
     <div class="card">
@@ -230,12 +244,22 @@ function renderDashboard(root: HTMLElement, view: DashboardView): void {
     window.location.reload();
   });
 
+  root.querySelectorAll<HTMLButtonElement>(".snapshot-thumb").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.snapshotId;
+      const thumb = view.snapshots.find((s) => s.id === id);
+      if (thumb) {
+        openSnapshotLightbox(thumb);
+      }
+    });
+  });
+
   root.querySelector("#capture-btn")?.addEventListener("click", () => {
     void (async () => {
       try {
         await requestCapture(view.settings);
         view.notice =
-          "Capture queued — image should appear within about a minute.";
+          "Capture queued — image should appear within about 10 seconds.";
         view.error = null;
       } catch (err) {
         view.notice = err instanceof Error ? err.message : "Capture request failed.";
@@ -310,57 +334,27 @@ export function mountApp(root: HTMLElement): void {
   let settings = loadSettings();
   let timer: number | undefined;
   let notice: string | null = null;
-  let snapshotImageUrl: string | null = null;
-  let cachedSnapshotId: string | null = null;
-
-  const loadLatestSnapshot = async (s: Settings): Promise<{
-    url: string | null;
-    capturedAt: string | null;
-  }> => {
-    const snaps = await fetchSnapshots(s, 1);
-    const latest = snaps[0];
-    if (!latest) {
-      if (snapshotImageUrl) {
-        URL.revokeObjectURL(snapshotImageUrl);
-        snapshotImageUrl = null;
-        cachedSnapshotId = null;
-      }
-      return { url: null, capturedAt: null };
-    }
-    if (latest.id === cachedSnapshotId && snapshotImageUrl) {
-      return { url: snapshotImageUrl, capturedAt: latest.captured_at };
-    }
-    const blob = await fetchSnapshotBlob(s, latest.id);
-    if (snapshotImageUrl) {
-      URL.revokeObjectURL(snapshotImageUrl);
-    }
-    snapshotImageUrl = URL.createObjectURL(blob);
-    cachedSnapshotId = latest.id;
-    return { url: snapshotImageUrl, capturedAt: latest.captured_at };
-  };
+  let snapshots: SnapshotThumb[] = [];
 
   const tick = async () => {
     if (!settings) {
       return;
     }
     try {
-      const [status, { events }, pairings, snapshot] = await Promise.all([
+      const [status, { events }, pairings, gallery] = await Promise.all([
         fetchStatus(settings),
         fetchEvents(settings),
         fetchPairings(settings).catch(() => [] as PairedClient[]),
-        loadLatestSnapshot(settings).catch(() => ({
-          url: snapshotImageUrl,
-          capturedAt: null,
-        })),
+        loadSnapshotGallery(settings, 5).catch(() => snapshots),
       ]);
+      snapshots = gallery;
       renderDashboard(root, {
         settings,
         status,
         events,
         pairings,
         pairingId: loadPairingId(),
-        snapshotImageUrl: snapshot.url,
-        latestSnapshotAt: snapshot.capturedAt,
+        snapshots: gallery,
         error: null,
         notice,
       });
@@ -378,8 +372,7 @@ export function mountApp(root: HTMLElement): void {
         events: [],
         pairings: [],
         pairingId: loadPairingId(),
-        snapshotImageUrl,
-        latestSnapshotAt: null,
+        snapshots,
         error: message,
         notice,
       });

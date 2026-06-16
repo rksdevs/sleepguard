@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/rksdevs/sleepguard/internal/cloud/api"
@@ -67,6 +68,16 @@ func main() {
 		log.Error("snapshot directory not writable", "dir", cfg.SnapshotDir, "error", err)
 		os.Exit(1)
 	}
+	testFile := filepath.Join(cfg.SnapshotDir, ".write-test")
+	if err := os.WriteFile(testFile, []byte("ok"), 0o644); err != nil {
+		log.Error("snapshot directory not writable by cloud process",
+			"dir", cfg.SnapshotDir,
+			"error", err,
+			"hint", "on Hetzner run: sudo chown -R 10001:10001 /data/sleepguard/data/snapshots",
+		)
+		os.Exit(1)
+	}
+	_ = os.Remove(testFile)
 
 	log.Info("SleepGuard cloud starting", "phase", "F")
 	log.Info("configuration",

@@ -156,6 +156,7 @@ func (s *Server) handleUploadSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	dir := filepath.Join(s.cfg.SnapshotDir, deviceID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		s.log.Error("snapshot mkdir failed", "error", err, "dir", dir)
 		writeError(w, http.StatusInternalServerError, "failed to store image")
 		return
 	}
@@ -165,6 +166,7 @@ func (s *Server) handleUploadSnapshot(w http.ResponseWriter, r *http.Request) {
 
 	out, err := os.Create(destPath)
 	if err != nil {
+		s.log.Error("snapshot create failed", "error", err, "path", destPath)
 		writeError(w, http.StatusInternalServerError, "failed to store image")
 		return
 	}

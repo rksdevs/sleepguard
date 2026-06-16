@@ -17,6 +17,7 @@ type Config struct {
 	DeviceName         string
 	QueuePath          string
 	HeartbeatInterval  time.Duration
+	CommandPollInterval time.Duration
 	UploadTimeout      time.Duration
 	Debug              bool
 	MockSensor         bool
@@ -38,7 +39,8 @@ func Load() (Config, error) {
 	flag.StringVar(&cfg.DeviceToken, "device-token", os.Getenv("SLEEPGUARD_DEVICE_TOKEN"), "device API token")
 	flag.StringVar(&cfg.DeviceName, "device", envOr("SLEEPGUARD_DEVICE", "nursery"), "device / sensor source name")
 	flag.StringVar(&cfg.QueuePath, "queue-path", envOr("SLEEPGUARD_QUEUE_PATH", "data/agent-queue.jsonl"), "offline event queue file")
-	flag.DurationVar(&cfg.HeartbeatInterval, "heartbeat-interval", 60*time.Second, "cloud heartbeat interval")
+	flag.DurationVar(&cfg.HeartbeatInterval, "heartbeat-interval", envDuration("SLEEPGUARD_HEARTBEAT_INTERVAL", 60*time.Second), "cloud heartbeat interval")
+	flag.DurationVar(&cfg.CommandPollInterval, "command-poll-interval", envDuration("SLEEPGUARD_COMMAND_POLL_INTERVAL", 5*time.Second), "how often to check for capture commands")
 	flag.DurationVar(&cfg.UploadTimeout, "upload-timeout", 15*time.Second, "HTTP timeout per upload request")
 	flag.BoolVar(&cfg.Debug, "debug", envBool("SLEEPGUARD_DEBUG"), "enable debug logging")
 	flag.BoolVar(&cfg.MockSensor, "mock-sensor", false, "use simulated sensor")
@@ -95,4 +97,16 @@ func envOr(key, fallback string) string {
 func envBool(key string) bool {
 	v := os.Getenv(key)
 	return v == "1" || v == "true" || v == "yes"
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fallback
+	}
+	return d
 }
