@@ -1,7 +1,9 @@
 deploy/.env
+deploy/agent.env
 *.exe
 sleepguard
 sleepguard-cloud
 data/
 node_modules/
 web/pwa/dist/
+bin/

@@ -119,9 +119,47 @@ sudo nginx -t && sudo systemctl reload nginx
 
 Open `https://sleepguard.rksdevs.in` in a browser (Cloudflare challenge once), enter read API key from `.env`, device id `nursery`.
 
-**Cloudflare orange proxy:** browser PWA works after challenge. Pi agent (phase C) will need a WAF skip rule for `/api/v1/events` or API token bypass.
+**Cloudflare (orange proxy):** Browsers pass the challenge; the **Pi agent cannot**. Before running the agent, add a WAF custom rule in Cloudflare:
+
+- **If** URI Path starts with `/api/v1/` **and** User Agent contains `SleepGuard-Agent` → **Skip** all security rules (or skip Managed Challenge)
+
+Or set a **DNS-only (grey cloud)** record for a separate hostname like `api.sleepguard.rksdevs.in` used only by the Pi.
 
 Snapshots (phase F): `/data/sleepguard/data/snapshots`
+
+---
+
+## Phase C — Pi agent
+
+On the **Raspberry Pi**:
+
+```bash
+cd ~/sleepguard
+git pull
+go build -o bin/sleepguard-agent ./cmd/agent
+
+cp deploy/agent.env.example deploy/agent.env
+nano deploy/agent.env   # SLEEPGUARD_DEVICE_TOKEN from Hetzner deploy/.env
+```
+
+Test manually (wave at PIR after ~60s warm-up):
+
+```bash
+go run ./cmd/agent -debug
+```
+
+Install systemd (edit paths in unit if your home dir differs):
+
+```bash
+mkdir -p ~/sleepguard/bin
+go build -o ~/sleepguard/bin/sleepguard-agent ./cmd/agent
+sudo cp deploy/systemd/sleepguard-agent.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now sleepguard-agent
+sudo journalctl -u sleepguard-agent -f
+```
+
+Verify on PWA: status **ONLINE**, new events when motion detected.
 
 ---
 

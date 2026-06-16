@@ -161,17 +161,17 @@ sleepguard/
 
 **Goal:** Real PIR events appear in PWA within seconds.
 
+**Status:** Code complete — deploy on Pi.
+
 | Task | Deliverable |
 |------|-------------|
-| `cmd/agent` | Refactor from `cmd/sleepguard` — sensor only + uploader |
-| `internal/agent/upload` | POST each event; retry with backoff |
-| Offline queue | JSONL on Pi if cloud unreachable; flush on reconnect |
-| Heartbeat | Periodic `POST /api/v1/heartbeat` |
-| Config | `-cloud-url`, `-device-token`, `-device-id` |
-| `deploy/systemd/sleepguard-agent.service` | Auto-start on Pi boot |
-| Deprecate primary use of Pi `:8080` | Optional local `/health` only |
+| `cmd/agent` | Edge binary: sensor + cloud upload |
+| `internal/agent/upload` | POST events + heartbeat with retry |
+| `internal/agent/queue` | JSONL offline queue |
+| `deploy/agent.env.example` | Pi credentials template |
+| `deploy/systemd/sleepguard-agent.service` | Auto-start on boot |
 
-**Done when:** Wave at PIR → event shows in PWA from India without manual `go run`.
+**Done when:** Wave at PIR → event in PWA within seconds; device shows ONLINE.
 
 ---
 

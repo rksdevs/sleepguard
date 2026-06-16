@@ -1,0 +1,16 @@
+[Unit]
+Description=SleepGuard Pi edge agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rksdevs
+WorkingDirectory=/home/rksdevs/sleepguard
+EnvironmentFile=/home/rksdevs/sleepguard/deploy/agent.env
+ExecStart=/home/rksdevs/sleepguard/bin/sleepguard-agent
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

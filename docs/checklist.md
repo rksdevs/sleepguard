@@ -108,11 +108,25 @@ Device token stored (y/n):
 
 ---
 
-*Code: HTTP server, `/health`, `/events`, dashboard HTML, notifier.*
+## Phase C — Pi agent → cloud
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 3.0 | `git pull` on Pi, then `go build ./...` | [ ] | Phase 2 adds `internal/web`, `internal/alert`, `internal/store` |
+| C.1 | Cloudflare WAF skip for `SleepGuard-Agent` on `/api/v1/*` | [ ] | Required with orange proxy |
+| C.2 | `git pull` on Pi, `go build -o bin/sleepguard-agent ./cmd/agent` | [ ] | |
+| C.3 | `deploy/agent.env` with device token | [ ] | `SLEEPGUARD_BOOTSTRAP_DEVICE_TOKEN` |
+| C.4 | Test: `go run ./cmd/agent -debug` | [ ] | PIR warm-up ~60s |
+| C.5 | PWA **ONLINE** + live events at sleepguard.rksdevs.in | [ ] | |
+| C.6 | `sudo systemctl enable --now sleepguard-agent` | [ ] | |
+
+**Phase C gate:** Real PIR motion appears in PWA without manual curl.
+
+---
+
+## Phase 2 — Local web dashboard (legacy)
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
 | 3.1 | Run: `go run ./cmd/sleepguard -device nursery -report-interval 5s -debug` | [ ] | HTTP + sensor run together; listens on `:8080` |
 | 3.2 | Confirm listen: `curl -s localhost:8080/health` | [ ] | Expect `{"status":"ok"}` |
 | 3.3 | From phone (same LAN): open `http://192.168.0.103:8080/` | [ ] | Dashboard auto-refreshes every 5 s |
