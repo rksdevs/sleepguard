@@ -1,0 +1,125 @@
+# SleepGuard — Hetzner deploy (Phase A)
+
+Cloud API on Docker. Postgres on host port **5433** (same server as wow-logs, **separate database**). nginx on 80/443 (configured once on the server; not in this repo).
+
+## wow-logs server layout
+
+| Item | Value |
+|------|--------|
+| Clone path | `/data/sleepguard` |
+| Cloud port | `127.0.0.1:8090` (8091 = prabhujee) |
+| Postgres | host `127.0.0.1:5433` — wow-logs uses DB `parser-v2` |
+| Public URL | `https://sleepguard.rksdevs.in` |
+
+Other ports in use: 8091 prabhujee, 8081 invenzo, 5434/5435 other Postgres.
+
+### Create SleepGuard database
+
+```bash
+sudo -u postgres psql -p 5433
+```
+
+```sql
+CREATE USER sleepguard WITH PASSWORD 'your-strong-password';
+CREATE DATABASE sleepguard OWNER sleepguard;
+\q
+```
+
+### Clone repo
+
+```bash
+mkdir -p /data/sleepguard
+cd /data/sleepguard
+git clone https://github.com/rksdevs/sleepguard.git .
+```
+
+### Configure and run Docker
+
+```bash
+cd /data/sleepguard/deploy
+cp env.example .env
+nano .env
+```
+
+```bash
+DATABASE_URL=postgres://sleepguard:PASSWORD@host.docker.internal:5433/sleepguard?sslmode=disable
+```
+
+Generate secrets:
+
+```bash
+openssl rand -hex 32   # SLEEPGUARD_READ_API_KEY
+openssl rand -hex 32   # SLEEPGUARD_BOOTSTRAP_DEVICE_TOKEN
+```
+
+```bash
+docker compose up -d --build
+docker compose logs -f cloud
+```
+
+Local health check:
+
+```bash
+curl -s http://127.0.0.1:8090/health
+```
+
+### nginx (one-time on server)
+
+Mirror `prabhujee.rksdevs.in` (proxy to localhost). Create `/etc/nginx/sites-available/sleepguard.rksdevs.in` with `proxy_pass http://127.0.0.1:8090`, enable site, certbot, reload.
+
+```bash
+sudo cat /etc/nginx/sites-enabled/prabhujee.rksdevs.in   # reference
+sudo certbot --nginx -d sleepguard.rksdevs.in
+sudo nginx -t && sudo systemctl reload nginx
+curl -s https://sleepguard.rksdevs.in/health
+```
+
+Phase B: serve PWA from `/data/sleepguard/web/pwa/dist` and proxy `/api/` to 8090.
+
+Snapshots (phase F): `/data/sleepguard/data/snapshots`
+
+---
+
+## Create a device (alternative to bootstrap)
+
+```bash
+cd /data/sleepguard/deploy
+docker compose run --rm cloud \
+  -database-url "postgres://sleepguard:PASSWORD@host.docker.internal:5433/sleepguard?sslmode=disable" \
+  -create-device \
+  -device-id nursery \
+  -device-name "Nursery Pi" \
+  -device-token "YOUR_DEVICE_TOKEN"
+```
+
+## Smoke test
+
+```bash
+curl -s -X POST https://sleepguard.rksdevs.in/api/v1/events \
+  -H "Authorization: Bearer DEVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"motion","source":"nursery","state":"active","pattern":"rise"}'
+
+curl -s "https://sleepguard.rksdevs.in/api/v1/events?device_id=nursery&limit=10" \
+  -H "Authorization: Bearer READ_KEY"
+```
+
+## API summary
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| GET | `/health` | none | Liveness |
+| POST | `/api/v1/events` | device token | Ingest motion event |
+| POST | `/api/v1/heartbeat` | device token | Update last_seen |
+| GET | `/api/v1/events?device_id=&limit=` | read key or device token | List events |
+| GET | `/api/v1/devices/{id}/status` | read key or device token | Device status |
+
+## Local dev without Docker
+
+```bash
+export DATABASE_URL='postgres://sleepguard:pass@localhost:5433/sleepguard?sslmode=disable'
+export SLEEPGUARD_READ_API_KEY='dev-read-key'
+
+go run ./cmd/cloud -create-device -device-id nursery -device-name Nursery -device-token dev-device-token
+go run ./cmd/cloud -debug
+```

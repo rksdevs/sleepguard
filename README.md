@@ -1,15 +1,15 @@
 # SleepGuard
 
-A **local-first baby sleep motion monitor** built in Go on a Raspberry Pi 4. SleepGuard detects motion via a PIR sensor, triggers alerts, stores event history, and exposes a LAN dashboard with optional camera snapshots — no cloud dependency required for the MVP.
+A **baby sleep motion monitor** — Pi edge agent + Hetzner cloud API + PWA. Detects motion via PIR, streams events to your server, and serves a family dashboard from anywhere.
 
 ## Why this project
 
 SleepGuard is designed as a portfolio piece that demonstrates:
 
 - **Embedded / IoT**: GPIO sensor integration on Raspberry Pi
-- **Backend engineering**: HTTP API, structured logging, concurrency, graceful shutdown
-- **Systems thinking**: Event-driven architecture, state machines, local persistence
-- **Pragmatic scope**: Local-first MVP that can grow into cloud sync, metrics, and vision later
+- **Edge + cloud**: Pi agent uploads events; Hetzner hosts API and PWA
+- **Backend engineering**: HTTP API, Postgres, Docker, structured logging
+- **Systems thinking**: Event-driven architecture, device auth, retention
 
 ## Scope
 
@@ -47,14 +47,14 @@ Full parts list and wiring notes: [docs/electronics.md](docs/electronics.md).
 ## Repository layout
 
 ```text
-cmd/sleepguard/main.go          # Entry point
-internal/config/                # Flags, env, config loading
-internal/sensor/                # Sensor interface + GPIO implementation
-internal/alert/                 # Alert channels and state machine
-internal/store/                 # In-memory and persistent event storage
-internal/web/                   # HTTP server, routes, HTML templates
-internal/camera/                # Snapshot capture (phase 4)
-internal/telemetry/             # Counters and metrics (phase 3)
+cmd/sleepguard/                 # Legacy local Pi app (dev / bench)
+cmd/cloud/                      # Hetzner cloud API
+internal/domain/                # Shared event types
+internal/sensor/                # PIR reader (Pi)
+internal/cloud/                 # API, auth, Postgres store, migrations
+internal/agent/                 # Pi uploader (phase C)
+web/pwa/                        # PWA (phase B)
+deploy/                         # Docker, env example, Hetzner guide
 docs/                           # Architecture, plan, checklist, electronics
 ```
 
@@ -62,21 +62,25 @@ docs/                           # Architecture, plan, checklist, electronics
 
 | Phase | Status |
 |-------|--------|
-| Phase 0 — Project bootstrap | Complete |
-| Phase 1 — Sensor + GPIO | Complete on Pi (GPIO17) |
-| Phase 2 — Web dashboard + alerts | Code complete — verify on Pi |
-| Phase 3 — Concurrency + storage | Not started |
-| Phase 4 — Camera + polish | Not started |
+| Pi PIR (local) | Complete on GPIO17 |
+| **A — Cloud API + Postgres** | **Code complete — deploy on Hetzner** |
+| B — PWA live log | Not started |
+| C — Pi agent → cloud | Not started |
+| D+ — Pairing, rules, camera | Planned |
 
-See [docs/checklist.md](docs/checklist.md) for Pi-specific tasks and [docs/implementation-plan.md](docs/implementation-plan.md) for the full roadmap.
+See [docs/implementation-plan.md](docs/implementation-plan.md) and [deploy/README.md](deploy/README.md).
 
-## Quick start (development machine)
+## Quick start — cloud (Phase A)
 
 ```bash
-git clone https://github.com/rksdevs/sleepguard.git
-cd sleepguard
-go run ./cmd/sleepguard
+# Local dev (requires Postgres database `sleepguard`)
+export DATABASE_URL='postgres://sleepguard:pass@localhost:5432/sleepguard?sslmode=disable'
+go run ./cmd/cloud -debug
 ```
+
+Hetzner: follow [deploy/README.md](deploy/README.md).
+
+## Quick start — local Pi (dev)
 
 With flags (mock sensor on dev machine — no GPIO):
 

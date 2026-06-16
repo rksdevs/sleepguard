@@ -1,0 +1,21 @@
+services:
+  cloud:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.cloud
+    container_name: sleepguard-cloud
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SLEEPGUARD_HTTP_ADDR: ":8090"
+      SLEEPGUARD_SNAPSHOT_DIR: /data/snapshots
+    ports:
+      - "${SLEEPGUARD_PORT:-8090}:8090"
+    volumes:
+      - sleepguard-snapshots:/data/snapshots
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  sleepguard-snapshots:

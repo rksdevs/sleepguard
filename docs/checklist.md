@@ -65,7 +65,34 @@ Issues resolved: breadboard center gap; wrong pin counting; GPIO2 always HIGH
 
 ---
 
-## Phase 2 — Web dashboard and alerts
+---
+
+## Phase A — Cloud API (Hetzner)
+
+*Code: `cmd/cloud`, Postgres, Docker. See [deploy/README.md](../deploy/README.md).*
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| A.1 | Create Postgres database `sleepguard` (separate from wow-logs) | [ ] | |
+| A.2 | Clone repo on Hetzner, `cp deploy/env.example deploy/.env` | [ ] | Set DATABASE_URL, keys |
+| A.3 | `docker compose up -d --build` in `deploy/` | [ ] | |
+| A.4 | `curl localhost:8090/health` returns ok | [ ] | |
+| A.5 | POST test event with device token | [ ] | See deploy README |
+| A.6 | GET events with read API key — newest first | [ ] | |
+
+**Phase A gate:** Event ingested on Hetzner and readable via API.
+
+### Your notes (Phase A)
+
+```
+Hetzner path:
+Domain (if any):
+Device token stored (y/n):
+```
+
+---
+
+## Phase 2 — Local web dashboard (legacy)
 
 *Code: HTTP server, `/health`, `/events`, dashboard HTML, notifier.*
 

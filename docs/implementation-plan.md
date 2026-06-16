@@ -1,195 +1,299 @@
 # SleepGuard Implementation Plan
 
-Phase-by-phase development plan for portfolio delivery. Each phase ends with a **demoable milestone**. Pi-specific steps live in [checklist.md](checklist.md).
+Phase-by-phase plan for **edge (Pi) + cloud (Hetzner) + PWA**.  
+Pi-specific steps: [checklist.md](checklist.md). Architecture: [architecture.md](architecture.md).
 
-**Time budget:** ~2 hours/day (adjust as needed for portfolio urgency).
-
-**Priority order:** motion alert → dashboard → persistence → camera → packaging.
-
----
-
-## Phase 0 — Project bootstrap
-
-**Goal:** Runnable Go module with config flags and a clear package layout.
-
-| Task | Package / area | Deliverable |
-|------|----------------|-------------|
-| Initialize module | `go.mod` | `github.com/rksdevs/sleepguard` |
-| Entry point | `cmd/sleepguard/main.go` | Startup message, flag parsing |
-| Event model | `internal/sensor` or migrate `internals/helpers` | `Event` struct + JSON marshal |
-| Config skeleton | `internal/config` | Struct for device name, cooldown, debug, HTTP addr |
-| Structured logging | `main` | `log/slog` for startup and config dump |
-
-**Done when:** `go run ./cmd/sleepguard -device nursery -alertInterval 30s` prints config and exits cleanly.
-
-**Status:** Complete on Pi.
+**Architecture shift (2026):** PIR verified locally. Primary UX moves to **cloud API + PWA**. Pi runs a lightweight **agent** that uploads events (and later snapshots). Pattern rules, pairing, and notifications live on the **server**.
 
 ---
 
-## Phase 1 — Sensor and GPIO (MVP core)
+## Completed — Local Pi foundation
 
-**Goal:** Read PIR motion on the Pi and emit debounced events to stdout/logs.
+| Phase | Status | Notes |
+|-------|--------|-------|
+| 0 — Bootstrap | Done | Go module, config, slog |
+| 1 — PIR / GPIO | Done | GPIO17, HC-SR501 verified on Pi |
+| 2 — Local HTTP dashboard | Done | Kept as dev fallback; not primary UX |
 
-**Status:** Complete on Pi (GPIO17, HC-SR501 verified).
-
-| Task | Package / area | Deliverable |
-|------|----------------|-------------|
-| Sensor interface | `internal/sensor/reader.go` | `Reader` interface + `EventHandler` callback |
-| Mock reader | `internal/sensor/mock.go` | Dev machine testing without hardware |
-| PIR reader | `internal/sensor/pir.go` | GPIO poll via `periph.io` |
-| Pattern reporting | `internal/sensor/pir.go` | rise / fall / hold / initial states |
-| Wire in main | `cmd/sleepguard/main.go` | Goroutine reading sensor |
-| Logging | all | `motion_detected`, `motion_ended`, `motion_idle`, `sensor_error` |
-
-**Dependencies:** `periph.io/x/host/v3`, `periph.io/x/conn/v3/gpio`
-
-**Done when:** On the Pi, waving in front of the PIR produces clear log lines without spam.
-
-**Pi checklist section:** Phase 1
+Local `cmd/sleepguard` remains useful for bench testing without cloud. Production path is `cmd/agent` + `cmd/cloud` + PWA.
 
 ---
 
-## Phase 2 — Local alerting and HTTP dashboard
+## Target architecture
 
-**Goal:** LAN-accessible web UI and at least one real alert channel.
+```text
+┌──────────────────┐         HTTPS (events, heartbeats, images)
+│  Pi — agent      │ ───────────────────────────────────────────►
+│  PIR · camera    │                                              │
+└──────────────────┘                              ┌─────────────▼────────────┐
+                                                    │  Hetzner — cloud API     │
+                                                    │  Postgres (sleepguard DB)│
+                                                    │  disk: /data/snapshots   │
+                                                    └─────────────┬────────────┘
+                                                                  │ HTTPS
+                                                    ┌─────────────▼────────────┐
+                                                    │  PWA (static build)      │
+                                                    │  logs · pairing · images │
+                                                    └──────────────────────────┘
+```
 
-**Status:** Code complete — Pi verification pending.
+**Not full microservices** — a **modular monorepo** with two Go binaries + static frontend. Portfolio-friendly, easy to deploy from one clone on Pi and Hetzner.
 
-| Task | Package / area | Deliverable |
-|------|----------------|-------------|
-| HTTP server | `internal/web/server.go` | Listen on `:8080` (configurable) |
-| Health endpoints | `internal/web/server.go` | `/health`, `/status`, `/config` |
-| Events API | `internal/web/server.go` | `GET /events` → JSON |
-| In-memory store | `internal/store/memory.go` | Thread-safe ring buffer + counters |
-| Connect sensor → store | `main` | `EventHandler` appends + triggers alerts |
-| HTML dashboard | `internal/web/templates/dashboard.html` | Event table, auto-refresh 5 s |
-| Alert notifier | `internal/alert/notifier.go` | `LogNotifier` + `ExecNotifier` (`-alert-cmd`) |
-| Alert manager | `internal/alert/manager.go` | Cooldown; alerts on `PatternRise` only |
-| Concurrent runtime | `main` | HTTP server + sensor goroutines, SIGINT shutdown |
+### Repo layout (target)
 
-**Done when:** Phone on same Wi‑Fi opens `http://<pi-ip>:8080`, sees events, and hears/sees an alert on motion.
+```text
+sleepguard/
+├── cmd/
+│   ├── agent/              # Pi edge process (sensor + upload + camera)
+│   └── cloud/              # Hetzner API server
+├── internal/
+│   ├── domain/             # Shared Event DTOs, API types
+│   ├── sensor/             # PIR reader (agent)
+│   ├── camera/             # Snapshot capture (agent, phase F)
+│   ├── agent/
+│   │   ├── config/
+│   │   ├── upload/         # HTTP client, retry, offline queue
+│   │   └── runtime/        # Wire sensor → uploader
+│   └── cloud/
+│       ├── api/            # HTTP handlers, routing
+│       ├── auth/           # Device tokens, user/session for PWA
+│       ├── store/          # Postgres repositories
+│       ├── rules/          # Pattern engine (cycle counting)
+│       ├── push/           # Web Push (VAPID)
+│       └── cleanup/        # Retention jobs
+├── web/
+│   └── pwa/                # Vite/React or similar → static dist/
+├── migrations/             # SQL schema (goose or embed)
+├── deploy/
+│   ├── docker-compose.yml  # cloud service (+ optional sidecar)
+│   ├── Dockerfile.cloud
+│   └── systemd/            # Pi agent unit (phase C)
+│       └── sleepguard-agent.service
+└── docs/
+```
 
-**Pi checklist section:** Phase 2
+### Postgres
 
----
+- Use existing Hetzner Postgres **instance** with a **separate database** `sleepguard` — do **not** share tables with `wow-logs`.
+- ~5k–10k events/day with daily cleanup is trivial for Postgres.
+- No TimescaleDB required.
 
-## Phase 3 — Concurrency, persistence, and telemetry
+### Images
 
-**Goal:** Production-shaped architecture — goroutines, channels, disk persistence, metrics.
+- Store JPEGs on **local disk** (e.g. `/var/lib/sleepguard/snapshots/`).
+- DB holds metadata + file path only.
+- Cleanup deletes rows **and** files.
 
-| Task | Package / area | Deliverable |
-|------|----------------|-------------|
-| Event channel | `main` | `chan sensor.Event` between workers |
-| Goroutine split | `main` | Sensor, alert, store workers |
-| Context shutdown | `main` | SIGINT/SIGTERM → graceful stop |
-| JSONL persistence | `internal/store/jsonl.go` | Events survive restart |
-| Load on startup | `internal/store` | Hydrate memory from file |
-| Telemetry | `internal/telemetry/metrics.go` | Counters + last event time |
-| Dashboard metrics | `internal/web` | Show counts on UI |
-| Refactor + cleanup | all | Package names, remove dead code |
+### PWA distribution
 
-**Optional:** SQLite instead of JSONL if you want SQL in the portfolio story.
-
-**Done when:** Restarting the app keeps history; dashboard shows motion/alert counts; Ctrl+C shuts down cleanly.
-
-**Pi checklist section:** Phase 3
-
----
-
-## Phase 4 — Camera, polish, and packaging
-
-**Goal:** Snapshot on motion, tuned reliability, Docker, portfolio-ready docs.
-
-| Task | Package / area | Deliverable |
-|------|----------------|-------------|
-| Camera capture | `internal/camera/capture.go` | `libcamera-still` / `raspistill` on motion |
-| Link snapshot to event | `internal/store` | `SnapshotPath` on event |
-| Latest image route | `internal/web` | `GET /snapshot/latest` |
-| Dashboard image | templates | Show latest capture |
-| Rate limits | `internal/alert`, `sensor` | Tune cooldowns, document defaults |
-| Metrics endpoint | `internal/web` | `/metrics` or telemetry page |
-| Dockerfile | repo root | Multi-stage or simple copy binary |
-| README polish | `README.md` | Screenshots, demo GIF, architecture link |
-
-**Done when:** Motion triggers snapshot; dashboard shows image; Docker builds; project is portfolio-ready.
-
-**Pi checklist section:** Phase 4
-
----
-
-## Phase 5 — Future (post-portfolio backlog)
-
-Not required for MVP. Track as issues or a backlog section.
-
-| Item | When to consider |
-|------|------------------|
-| Push notifications (Pushover, ntfy) | After local alert works |
-| MQTT integration | Smart home users |
-| Cloud sync | Multiple caregivers / locations |
-| Prometheus exporter | Homelab / SRE story |
-| Basic auth on dashboard | If exposed beyond trusted LAN |
-| Kubernetes | Multiple services, not for single-binary Pi app |
-| AI vision on snapshots | After camera pipeline is stable |
+- `npm run build` → `web/pwa/dist/`
+- Served by Caddy/nginx on Hetzner (same origin as API — avoids CORS pain).
+- Family opens `https://sleepguard.yourdomain.com` — bookmark to home screen (installable PWA).
 
 ---
 
-## Suggested timeline
+## Where pattern rules should live
 
-| Phase | Focus | Approx. duration |
-|-------|--------|----------------|
-| 0 | Bootstrap | 1–2 days |
-| 1 | GPIO + sensor | 3–5 days |
-| 2 | Web + alerts | 5–7 days |
-| 3 | Concurrency + storage | 5–7 days |
-| 4 | Camera + Docker | 5–7 days |
+**Recommendation: server (`internal/cloud/rules`).**
 
-**Total MVP:** ~3–4 weeks at 2 h/day. Compress phases 2–3 if portfolio deadline is tight (e.g. skip HTML polish until phase 4).
+| Factor | Pi (India home) | Server (EU Hetzner) |
+|--------|-----------------|---------------------|
+| RTT India → EU | N/A | ~150–250 ms typical |
+| Event rate | — | Small JSON every few seconds at most |
+| Rule timing | Cycles are **seconds apart** | Latency irrelevant |
+| Change thresholds | Needs SSH / redeploy | Edit in PWA settings → DB |
+| Pairing / Web Push | Cannot own pairing | Natural home |
+| Wife / family settings | Per-phone config belongs in cloud | Yes |
+| Pi offline | Could alert locally | Buffer + upload later; optional local log-only fallback |
+
+200 Mbps and a premium Hetzner project are more than enough. Bottleneck is not bandwidth — it is **keeping one place for logic** (server) so the Pi stays a **dumb, reliable sensor**.
+
+**Pi agent sends:** raw events (`rise`, `fall`, `hold`, `initial`) + heartbeat.  
+**Server does:** cycle counting, notify at 3, request snapshot at 5, Web Push, cleanup.
+
+**Optional later:** Pi plays a local buzzer on `rise` if cloud is unreachable (fail-safe). Not v1.
+
+---
+
+## Phase A — Cloud API + Postgres (Hetzner)
+
+**Goal:** Deployable cloud service that accepts and stores events.
+
+**Status:** Code complete — deploy and verify on Hetzner.
+
+| Task | Deliverable |
+|------|-------------|
+| `internal/cloud/migrate/sql/` | `devices`, `events` tables |
+| `cmd/cloud` | HTTP server, health, ingest |
+| Device auth | API key per Pi (`Authorization: Bearer <device-token>`) |
+| `POST /api/v1/events` | Ingest event JSON from agent |
+| `GET /api/v1/events` | List events (newest first), filter by device |
+| `GET /api/v1/devices/{id}/status` | last_seen, event count |
+| `deploy/docker-compose.yml` | Cloud container, env, volume for snapshots dir |
+| `deploy/README.md` | Hetzner setup and smoke tests |
+
+**Done when:** `curl` can POST a fake event and GET it back from Hetzner.
+
+**Deploy:** See [deploy/README.md](../deploy/README.md).
+
+---
+
+## Phase B — PWA v1 (read-only live log)
+
+**Goal:** Browser UI on Hetzner showing motion events without touching the Pi dashboard.
+
+| Task | Deliverable |
+|------|-------------|
+| `web/pwa/` | Scaffold (Vite + minimal UI) |
+| Event log page | Newest first, auto-refresh (poll 2–5 s or SSE) |
+| Device status | Online if heartbeat &lt; 2 min |
+| Auth v1 | Simple shared PIN or basic auth behind Caddy (family-only) |
+| Static deploy | `dist/` served at `/`, API at `/api/` |
+
+**Done when:** Open PWA from India, see events ingested via `curl` (before Pi is connected).
+
+---
+
+## Phase C — Pi agent → cloud stream
+
+**Goal:** Real PIR events appear in PWA within seconds.
+
+| Task | Deliverable |
+|------|-------------|
+| `cmd/agent` | Refactor from `cmd/sleepguard` — sensor only + uploader |
+| `internal/agent/upload` | POST each event; retry with backoff |
+| Offline queue | JSONL on Pi if cloud unreachable; flush on reconnect |
+| Heartbeat | Periodic `POST /api/v1/heartbeat` |
+| Config | `-cloud-url`, `-device-token`, `-device-id` |
+| `deploy/systemd/sleepguard-agent.service` | Auto-start on Pi boot |
+| Deprecate primary use of Pi `:8080` | Optional local `/health` only |
+
+**Done when:** Wave at PIR → event shows in PWA from India without manual `go run`.
+
+---
+
+## Phase D — Pairing, settings, Web Push
+
+**Goal:** Phones paired via portal; configurable notifications including alarm-style push.
+
+| Task | Deliverable |
+|------|-------------|
+| DB | `paired_clients`, `client_settings` |
+| PWA pairing flow | Generate code / QR → register push subscription |
+| Unpair | Revoke client in portal |
+| `internal/cloud/push` | Web Push (VAPID), priority for alarm |
+| Settings UI | Per client: enable notify, cycle threshold override, require interaction |
+| PWA manifest + service worker | Installable, push permissions |
+
+**Done when:** Wife pairs phone; motion rule (simple: every `rise` or first rule version) triggers push in India.
+
+---
+
+## Phase E — Pattern rules on server
+
+**Goal:** 3 consecutive motion cycles → notify; 5 → trigger snapshot request.
+
+| Task | Deliverable |
+|------|-------------|
+| `internal/cloud/rules` | State machine on event stream per device |
+| Define cycle | e.g. `rise` → `fall` completes one cycle (document in code) |
+| Thresholds | Default 3 / 5; overridable in `client_settings` |
+| Agent command channel | Heartbeat response `{ "capture_snapshot": true }` when threshold hit |
+| Cooldowns | Avoid notification spam |
+
+**Done when:** Simulated or real motion cycles trigger push at 3; agent receives capture command at 5.
+
+---
+
+## Phase F — Camera + snapshots
+
+**Goal:** JPEG on disk, visible in PWA, linked to event.
+
+| Task | Deliverable |
+|------|-------------|
+| `internal/camera` | `libcamera-still` / `raspistill` on agent |
+| `POST /api/v1/snapshots` | Multipart upload from agent |
+| Disk storage | Save under `/var/lib/sleepguard/snapshots/` |
+| `GET /api/v1/snapshots/{id}` | Serve image (auth required) |
+| PWA gallery | Latest + per-event thumbnail; push links to snapshot |
+
+**Done when:** 5-cycle rule produces image in PWA from India.
+
+---
+
+## Phase G — Cleanup, polish, portfolio
+
+**Goal:** Retention, docs, production hardening.
+
+| Task | Deliverable |
+|------|-------------|
+| `internal/cloud/cleanup` | Delete events + snapshot files older than retention |
+| Manual cleanup | PWA button “Clean up now” (keeps devices + settings) |
+| Scheduled cleanup | Cron or daily job (e.g. 04:00) |
+| README + architecture | Screenshots, demo flow, Hetzner deploy steps |
+| Remove or gate legacy Pi dashboard | Document as dev-only |
+
+**Done when:** Cleanup runs; pairing/settings survive; README tells portfolio story.
+
+---
+
+## Phase H — Future backlog
+
+| Item | Notes |
+|------|-------|
+| WebRTC live stream | Signaling + coturn on Hetzner; heavy on Pi CPU |
+| Telegram / ntfy fallback | If Web Push alarm insufficient on some phones |
+| Multi-room devices | Multiple `device_id`s, same PWA |
+| Grafana on wow-logs | Separate concern; do not mix DBs |
 
 ---
 
 ## Phase dependencies
 
 ```text
-Phase 0 ──► Phase 1 ──► Phase 2 ──► Phase 3 ──► Phase 4
-              │            │            │
-              │            └────────────┴── can parallelize camera late
-              └── requires Pi wiring (checklist)
+[A: Cloud API] ──► [B: PWA read-only]
+        │
+        └──────────► [C: Pi agent] ──► [D: Pairing + Push] ──► [E: Rules] ──► [F: Camera]
+                                                                              │
+                                                                              ▼
+                                                                        [G: Cleanup + polish]
 ```
 
----
-
-## Definition of done (full MVP)
-
-- [x] PIR motion detected on Pi with debouncing
-- [ ] Alert fires on motion (audible or visible)
-- [ ] LAN dashboard lists events and status
-- [ ] Events persist across restart
-- [ ] Goroutine + channel architecture with graceful shutdown
-- [ ] Telemetry visible on dashboard
-- [ ] Optional: snapshot on motion
-- [ ] Dockerfile builds and runs
-- [ ] README + architecture docs complete
+Phases A + B can start **without Pi**. Phase C connects verified PIR. D–F build on cloud.
 
 ---
 
-## Mapping from original learning plan
+## Suggested timeline (~2 h/day)
 
-The [motion-sensor-go.md](motion-sensor-go.md) day-by-day plan maps roughly as:
+| Phase | Focus | Approx. |
+|-------|--------|---------|
+| A | Cloud + Postgres | 3–5 days |
+| B | PWA live log | 3–4 days |
+| C | Pi agent stream | 2–4 days |
+| D | Pairing + push | 4–6 days |
+| E | Pattern rules | 2–3 days |
+| F | Camera | 3–5 days |
+| G | Cleanup + docs | 2–3 days |
 
-| Original weeks | This plan |
-|----------------|-----------|
-| Week 1 (days 1–7) | Phase 0 + Phase 1 |
-| Week 2 (days 8–14) | Phase 2 |
-| Week 3 (days 15–21) | Phase 3 |
-| Week 4 (days 22–28) | Phase 4 |
+---
 
-Use the original doc for Go concept references; use this doc for delivery milestones.
+## Definition of done (cloud MVP)
+
+- [x] PIR motion on Pi (local verification)
+- [ ] Events ingested on Hetzner Postgres
+- [ ] PWA shows live log (newest first) from India
+- [ ] Pi agent auto-starts via systemd
+- [ ] Phones paired; Web Push notifications work
+- [ ] Server pattern rules: 3 cycles → notify, 5 → snapshot
+- [ ] Snapshots on disk + visible in PWA
+- [ ] Cleanup removes logs/images; keeps devices + settings
+- [ ] Single-repo deploy docs for Pi + Hetzner
 
 ---
 
 ## How we work with the checklist
 
-1. Implement code for the current phase on dev machine (or directly on Pi).
-2. Update [checklist.md](checklist.md) with new Pi steps for that phase.
-3. You complete Pi steps and mark them done.
-4. Verify "done when" criteria, then move to the next phase.
+1. Implement code for the current phase.
+2. Update [checklist.md](checklist.md) with Pi **and** Hetzner steps.
+3. Deploy and verify “done when”.
+4. Move to next phase.
