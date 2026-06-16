@@ -27,6 +27,8 @@ type Config struct {
 
 // Load parses flags and environment for the edge agent.
 func Load() (Config, error) {
+	loadDefaultEnvFiles()
+
 	cfg := Config{}
 
 	flag.StringVar(&cfg.CloudURL, "cloud-url", envOr("SLEEPGUARD_CLOUD_URL", "https://sleepguard.rksdevs.in"), "cloud API base URL")
@@ -42,6 +44,10 @@ func Load() (Config, error) {
 	flag.DurationVar(&cfg.ReportInterval, "report-interval", 5*time.Second, "steady-state log interval")
 
 	flag.Parse()
+
+	if cfg.DeviceToken == "" {
+		cfg.DeviceToken = os.Getenv("SLEEPGUARD_DEVICE_TOKEN")
+	}
 
 	if cfg.CloudURL == "" {
 		return Config{}, fmt.Errorf("cloud-url is required")
