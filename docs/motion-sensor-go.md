@@ -1,5 +1,7 @@
 # SleepGuard: Motion Sensor in Go
 
+> **Note (June 2026):** This was the original learning-oriented day-by-day plan for the **local** `cmd/sleepguard` app. Production now uses **`cmd/agent` + cloud + PWA** — see [implementation-plan.md](implementation-plan.md) and [architecture.md](architecture.md) §3.
+
 > Local-first baby sleep motion monitor.  
 > Time budget: 2 hours per day.  
 > Current Go level assumed: variables, functions, loops, if/else, errors, structs, interfaces.  

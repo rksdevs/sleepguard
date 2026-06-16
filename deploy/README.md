@@ -1,6 +1,16 @@
-# SleepGuard — Hetzner deploy (Phase A)
+# SleepGuard — Deploy guide (Hetzner + Pi)
 
 Cloud API on Docker. Postgres on host port **5433** (same server as wow-logs, **separate database**). nginx on 80/443 (configured once on the server; not in this repo).
+
+## Current status (June 2026)
+
+Phases **A–F** are deployed and verified in production:
+
+- Live log PWA, push notifications (every 3 motion cycles), manual capture, 5-image carousel with download
+- Pi agent on systemd; snapshots on disk at `/data/sleepguard/data/snapshots`
+- Fast capture: Pi polls `GET /api/v1/agent/commands` every **~5s** (not heartbeat-bound)
+
+**Next (RTC):** Phase G — portfolio polish, screenshots, optional per-client settings UI. See [docs/implementation-plan.md](../docs/implementation-plan.md).
 
 ## wow-logs server layout
 
@@ -281,7 +291,7 @@ PWA → POST /api/v1/devices/{id}/capture
     → Pi polls GET /api/v1/agent/commands every ~5s
     → rpicam-still on Pi
     → POST /api/v1/snapshots (multipart)
-    → PWA shows latest image
+    → PWA carousel (5 recent) + lightbox + download
 ```
 
 **Pi prerequisites:** Pi Camera v2 on CSI; install `rpicam-apps` (or `libcamera-apps` on older images). On recent Pi OS use **`rpicam-still`**, not `libcamera-still`:
@@ -324,6 +334,35 @@ for i in 1 2 3; do
 done
 # → push on 3rd cycle
 ```
+
+---
+
+## RTC — what to do next (Phase G+)
+
+| Priority | Task | Notes |
+|----------|------|-------|
+| 1 | Portfolio README screenshots | PWA, push notification, capture carousel |
+| 2 | Per-client settings in PWA | Override cycle threshold without env vars |
+| 3 | Push deep-link to open PWA after alert | Optional |
+| 4 | Legacy `cmd/sleepguard` | Document as dev-only; do not deploy |
+| 5 | Backlog | WebRTC stream, Telegram/ntfy, multi-room — see implementation plan |
+
+### Standard deploy after `git pull`
+
+```bash
+# Hetzner
+sudo chown -R 10001:10001 /data/sleepguard/data/snapshots   # if new server
+cd /data/sleepguard && git pull
+docker compose -f deploy/docker-compose.yml up -d --build
+bash deploy/build-pwa.sh
+
+# Pi (only when agent/camera code changed)
+cd ~/sleepguard && git pull
+go build -o ~/sleepguard/bin/sleepguard-agent ./cmd/agent
+sudo systemctl restart sleepguard-agent
+```
+
+PWA-only changes: Hetzner `git pull` + `build-pwa.sh` — no Pi restart needed.
 
 ## Local dev without Docker
 

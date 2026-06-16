@@ -1,6 +1,8 @@
 # SleepGuard Architecture
 
-This document describes the high-level design (HLD) and low-level design (LLD) for SleepGuard — a local-first motion monitoring system on Raspberry Pi 4.
+This document describes the high-level design (HLD) and low-level design (LLD) for SleepGuard.
+
+> **Production (June 2026):** The live system is **Pi agent + Hetzner cloud + PWA**. Sections 1–2 below describe the original **local-only** `cmd/sleepguard` design (still useful for bench testing). See **§3 Production architecture** for the deployed system.
 
 ---
 
@@ -378,23 +380,104 @@ sleepguard/
 
 ---
 
-## 3. Evolution path
+## 3. Production architecture (June 2026)
 
-```text
-MVP (phases 1–4)
-    → MQTT or webhook to phone (optional)
-    → Cloud sync (multi-device)
-    → Prometheus + Grafana
-    → Kubernetes (only if multiple services)
-    → AI vision on snapshots
+### 3.1 System context
+
+```mermaid
+flowchart LR
+    subgraph Pi
+        PIR[PIR GPIO17]
+        CAM[Pi Camera imx219]
+        AG[cmd/agent]
+        PIR --> AG
+        CAM --> AG
+    end
+
+    subgraph Hetzner
+        API[cloud API :8090]
+        PG[(Postgres sleepguard)]
+        DISK[/data/snapshots]
+        API --> PG
+        API --> DISK
+    end
+
+    subgraph Clients
+        PWA[PWA browser]
+    end
+
+    AG -->|POST events heartbeat snapshots| API
+    AG -->|GET commands ~5s| API
+    PWA -->|HTTPS read key| API
+    API -->|Web Push VAPID| PWA
 ```
 
-Each layer stays behind interfaces so the core pipeline does not need rewrites.
+### 3.2 Components
+
+| Component | Role |
+|-----------|------|
+| `cmd/agent` | PIR read, event upload, heartbeat, command poll, `rpicam-still` capture |
+| `cmd/cloud` | HTTP API, auth, Postgres, rules engine, push, capture queue, cleanup |
+| `web/pwa` | Live log, status, notifications, manual capture, snapshot carousel |
+| `internal/cloud/rules` | Count rise→fall cycles; trigger push at 3, 6, 9… |
+| `internal/cloud/commands` | Queue capture requests; agent polls `/api/v1/agent/commands` |
+| `internal/camera` | Capture JPEG on Pi (`rpicam-still` first) |
+
+### 3.3 Data flow — motion
+
+1. PIR state change → agent posts `POST /api/v1/events` with `pattern: rise|fall|hold`.
+2. Cloud stores event; rules engine updates cycle count per device.
+3. At 3, 6, 9… completed cycles → Web Push to paired clients.
+4. PWA polls `GET /api/v1/events` every few seconds.
+
+### 3.4 Data flow — manual capture
+
+1. User taps **Capture image** in PWA → `POST /api/v1/devices/{id}/capture`.
+2. Cloud enqueues command in `commands.CaptureQueue`.
+3. Agent polls `GET /api/v1/agent/commands` every ~5s (not tied to 60s heartbeat).
+4. Agent runs `rpicam-still`, uploads `POST /api/v1/snapshots` (multipart).
+5. Cloud writes JPEG to `/data/sleepguard/data/snapshots` (uid 10001 in container).
+6. PWA fetches `GET /api/v1/snapshots` and displays carousel.
+
+### 3.5 Auth
+
+| Caller | Auth |
+|--------|------|
+| Pi agent | `Authorization: Bearer <device-token>` |
+| PWA / family | `Authorization: Bearer <read-api-key>` |
+| Push subscribe | Read key for pair; VAPID for delivery |
+
+### 3.6 Deployment
+
+| Host | Process | Notes |
+|------|---------|-------|
+| Hetzner | Docker `cloud`, nginx, Postgres `:5433` | `/data/sleepguard` |
+| Pi | `sleepguard-agent.service` | Cloudflare WAF skip for agent UA |
+| Family | PWA (installable) | `https://sleepguard.rksdevs.in` |
+
+### 3.7 RTC — next (Phase G)
+
+Portfolio screenshots, per-client settings UI, optional push deep-links. Backlog: WebRTC, ntfy/Telegram, multi-device. See [implementation-plan.md](implementation-plan.md).
 
 ---
 
-## 4. Related documents
+## 4. Evolution path
 
-- [implementation-plan.md](implementation-plan.md) — build phases and deliverables
-- [checklist.md](checklist.md) — Pi 4 tasks per phase
+```text
+Local MVP (cmd/sleepguard) — dev only
+    → Cloud + PWA + agent (shipped A–F)
+    → Phase G polish
+    → WebRTC live stream (backlog)
+    → Multi-room, external notify fallbacks
+```
+
+Each layer stays behind interfaces so components can evolve independently.
+
+---
+
+## 5. Related documents
+
+- [implementation-plan.md](implementation-plan.md) — phases, definition of done, **RTC**
+- [checklist.md](checklist.md) — Pi + Hetzner verification
+- [deploy/README.md](../deploy/README.md) — deploy and API reference
 - [electronics.md](electronics.md) — wiring and parts

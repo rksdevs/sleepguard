@@ -1,132 +1,102 @@
 # SleepGuard
 
-A **baby sleep motion monitor** — Pi edge agent + Hetzner cloud API + PWA. Detects motion via PIR, streams events to your server, and serves a family dashboard from anywhere.
+A **baby sleep motion monitor** — Pi edge agent + Hetzner cloud API + installable PWA. PIR on the nursery Pi streams motion events to your server; family checks the live log, gets push alerts on sustained motion, and captures camera stills on demand from anywhere.
+
+**Live:** [https://sleepguard.rksdevs.in](https://sleepguard.rksdevs.in)
 
 ## Why this project
 
 SleepGuard is designed as a portfolio piece that demonstrates:
 
-- **Embedded / IoT**: GPIO sensor integration on Raspberry Pi
-- **Edge + cloud**: Pi agent uploads events; Hetzner hosts API and PWA
-- **Backend engineering**: HTTP API, Postgres, Docker, structured logging
-- **Systems thinking**: Event-driven architecture, device auth, retention
+- **Embedded / IoT**: PIR + Pi Camera on Raspberry Pi 4
+- **Edge + cloud**: Pi agent uploads events; Hetzner hosts API, Postgres, and PWA
+- **Backend engineering**: HTTP API, device auth, rules engine, Web Push, Docker
+- **Systems thinking**: Server-side pattern rules, manual capture UX, retention
 
-## Scope
+## Current status (June 2026)
 
-### In scope (MVP)
+| Phase | Scope | Status |
+|-------|--------|--------|
+| 0–1 | Pi PIR local verify (GPIO17) | Done |
+| **A** | Cloud API + Postgres on Hetzner | Done |
+| **B** | PWA live log | Done |
+| **C** | Pi agent → cloud (systemd) | Done |
+| **D** | Web Push pairing + 24h cleanup | Done |
+| **E** | Server rules: push every 3 motion cycles | Done |
+| **F** | Manual camera capture + snapshot carousel | Done |
+| **G** | Portfolio polish, legacy cleanup | **Next (RTC)** |
 
-| Area | Description |
-|------|-------------|
-| Motion detection | PIR sensor on Pi GPIO with debouncing and cooldown |
-| Alerting | Local alert channel (sound, browser notification, or LAN notification) |
-| Event history | In-memory store with JSONL or SQLite persistence |
-| Web dashboard | `/health`, `/status`, `/events`, local HTML UI on LAN |
-| Telemetry | Motion count, alert count, uptime, last event time |
-| Camera (phase 4) | Snapshot on motion, latest image on dashboard |
-| Packaging | Docker image for repeatable deployment |
+See [docs/implementation-plan.md](docs/implementation-plan.md) for the full roadmap and [deploy/README.md](deploy/README.md) for ops.
 
-### Out of scope (for now)
+## Architecture (production)
 
-- Cloud sync and multi-user accounts
-- Kubernetes / multi-service orchestration
-- Live video streaming
-- AI / computer vision
-- Mobile native apps
+```text
+Pi (nursery)                    Hetzner (wowlogs)
+┌─────────────────┐            ┌──────────────────────────┐
+│ PIR → agent     │──HTTPS───►│ cloud API (:8090)        │
+│ rpicam-still    │           │ Postgres (sleepguard DB) │
+│ systemd agent   │◄─poll 5s──│ snapshots on disk        │
+└─────────────────┘            │ nginx + PWA dist       │
+                               └───────────┬──────────────┘
+                                           │ HTTPS
+                               ┌───────────▼──────────────┐
+                               │ Family phones (PWA)      │
+                               │ log · push · capture     │
+                               └──────────────────────────┘
+```
 
-These are documented as future phases in [docs/implementation-plan.md](docs/implementation-plan.md).
-
-## Hardware
-
-- Raspberry Pi 4 (primary runtime)
-- PIR motion sensor (HC-SR501 or equivalent)
-- Optional: Pi Camera Module or USB webcam (phase 4)
-- Jumper wires, breadboard or soldered connections, 5V power supply
-
-Full parts list and wiring notes: [docs/electronics.md](docs/electronics.md).
+**Pi sends:** raw `rise` / `fall` / `hold` events + heartbeats + JPEG uploads.  
+**Server does:** cycle counting, Web Push (3, 6, 9… cycles), capture queue, retention cleanup.  
+**User triggers:** camera still via PWA **Capture image** (not automatic on motion).
 
 ## Repository layout
 
 ```text
-cmd/sleepguard/                 # Legacy local Pi app (dev / bench)
-cmd/cloud/                      # Hetzner cloud API
-internal/domain/                # Shared event types
-internal/sensor/                # PIR reader (Pi)
-internal/cloud/                 # API, auth, Postgres store, migrations
-internal/agent/                 # Pi uploader (phase C)
-web/pwa/                        # PWA (phase B)
-deploy/                         # Docker, env example, Hetzner guide
-docs/                           # Architecture, plan, checklist, electronics
+cmd/agent/          # Pi edge agent (PIR + camera + cloud upload)
+cmd/cloud/          # Hetzner API server
+cmd/sleepguard/     # Legacy local Pi app (dev / bench only)
+internal/domain/    # Shared event + pairing types
+internal/sensor/    # PIR reader
+internal/camera/    # rpicam-still / libcamera-still capture
+internal/agent/     # Upload client, offline queue, config
+internal/cloud/     # API, auth, store, rules, push, cleanup, commands
+web/pwa/            # Vite + TypeScript PWA
+deploy/             # Docker, env examples, Hetzner + Pi guides
+scripts/            # gen-vapid-keys.go
+docs/               # Architecture, plan, checklist, electronics
 ```
 
-## Current status
+## Quick start — deploy
 
-| Phase | Status |
-|-------|--------|
-| Pi PIR (local) | Complete on GPIO17 |
-| **A — Cloud API + Postgres** | Complete on Hetzner |
-| **B — PWA live log** | Complete on Hetzner |
-| **C — Pi agent → cloud** | Code complete — deploy on Pi |
-| D+ — Pairing, rules, camera | Planned |
+| Target | Guide |
+|--------|--------|
+| **Hetzner** (cloud + PWA) | [deploy/README.md](deploy/README.md) |
+| **Pi** (agent + camera) | [deploy/README.md](deploy/README.md) § Phase C / F |
+| **Local dev** (mock sensor) | `go run ./cmd/agent -mock-sensor -mock-camera` |
 
-See [docs/implementation-plan.md](docs/implementation-plan.md) and [deploy/README.md](deploy/README.md).
+## Hardware
 
-## Quick start — cloud (Phase A)
+- Raspberry Pi 4 (4GB), hostname `sleepguard`
+- PIR HC-SR501 on **GPIO17 (pin 11)** — not GPIO2
+- Pi Camera Module v2 on CSI (`imx219`, use `rpicam-still` on Bookworm+)
 
-```bash
-# Local dev (requires Postgres database `sleepguard`)
-export DATABASE_URL='postgres://sleepguard:pass@localhost:5432/sleepguard?sslmode=disable'
-go run ./cmd/cloud -debug
-```
-
-Hetzner: follow [deploy/README.md](deploy/README.md).
-
-## Quick start — local Pi (dev)
-
-With flags (mock sensor on dev machine — no GPIO):
-
-```bash
-go run ./cmd/sleepguard -mock-sensor -device nursery -report-interval 5s -debug
-```
-
-## Quick start (Raspberry Pi 4)
-
-1. Install Go 1.24+ on the Pi (or cross-compile from your dev machine).
-2. Wire the PIR sensor per [docs/electronics.md](docs/electronics.md) — **GPIO17 (pin 11)**.
-3. Follow [docs/checklist.md](docs/checklist.md) for each phase.
-4. Run the app and open the dashboard from a phone or laptop on the same LAN:
-
-```bash
-cd ~/sleepguard && git pull
-go run ./cmd/sleepguard -device nursery -report-interval 5s -debug
-# Dashboard: http://<pi-ip>:8080
-# Health:     curl localhost:8080/health
-```
-
-Optional audible alert via shell command:
-
-```bash
-go run ./cmd/sleepguard -device nursery -alert-cmd "aplay /path/to/beep.wav"
-```
+Wiring: [docs/electronics.md](docs/electronics.md). Pi checklist: [docs/checklist.md](docs/checklist.md).
 
 ## Documentation
 
 | Document | Purpose |
 |----------|---------|
-| [docs/architecture.md](docs/architecture.md) | High-level and low-level design |
-| [docs/implementation-plan.md](docs/implementation-plan.md) | Phase-by-phase build plan |
-| [docs/checklist.md](docs/checklist.md) | Pi 4 action items (updated per phase) |
-| [docs/electronics.md](docs/electronics.md) | Parts list and wiring reference |
-| [docs/motion-sensor-go.md](docs/motion-sensor-go.md) | Original learning-oriented day-by-day plan |
+| [docs/implementation-plan.md](docs/implementation-plan.md) | Phases A–H, definition of done, **RTC** |
+| [docs/architecture.md](docs/architecture.md) | HLD/LLD (legacy local + production addendum) |
+| [docs/checklist.md](docs/checklist.md) | Pi + Hetzner verification checklist |
+| [deploy/README.md](deploy/README.md) | Deploy, API reference, smoke tests |
+| [docs/electronics.md](docs/electronics.md) | Parts and wiring |
 
 ## Tech stack
 
-- **Language:** Go 1.24+
-- **Hardware:** Raspberry Pi 4, PIR sensor, optional camera
-- **GPIO:** [periph.io](https://periph.io/)
-- **HTTP:** `net/http`, `html/template`
-- **Storage:** JSONL or SQLite (phase 3)
-- **Logging:** `log/slog`
-- **Packaging:** Docker (phase 4)
+- **Go 1.25+**, **Postgres**, **Docker** (cloud), **Vite/TS** (PWA)
+- **GPIO:** periph.io · **Camera:** rpicam-apps · **Push:** Web Push (VAPID)
+- **Infra:** Hetzner, nginx, Cloudflare, Pi systemd
 
 ## License
 
@@ -134,4 +104,4 @@ TBD.
 
 ## Resume / portfolio summary
 
-> Built a local-first baby sleep monitoring system in Go on Raspberry Pi. Detects motion via GPIO, triggers alerts through an event-driven pipeline with goroutines and channels, persists event history, and serves a LAN dashboard with telemetry and optional camera snapshots. Designed for extension to cloud sync and vision features.
+> Built a full-stack baby motion monitor: Raspberry Pi edge agent (PIR + camera) streams to a Go cloud API on Hetzner with Postgres, server-side motion-cycle rules, Web Push alerts, and an installable PWA for live logs and on-demand nursery snapshots — deployed end-to-end from India to EU with Docker, nginx, and systemd.

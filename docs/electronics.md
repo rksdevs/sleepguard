@@ -2,6 +2,8 @@
 
 Parts list and wiring reference. Use this to verify you have everything before each phase.
 
+> **Production (June 2026):** PIR on **GPIO17 (pin 11)**. Pi Camera v2 on CSI — use **`rpicam-still`** on current Pi OS (`rpicam-apps`). Capture is triggered manually from the PWA, not on every motion. See [checklist.md](checklist.md) Phase F.
+
 ---
 
 ## Your kit (confirmed)
@@ -17,7 +19,7 @@ Parts list and wiring reference. Use this to verify you have everything before e
 | Cooling | No heatsink / fan | OK for dev; monitor temp if running 24/7 |
 | Resistors | 300 Ω | Ready — fine for LED current limiting (330 Ω ideal; 300 Ω is close) |
 | LEDs | Yes | Ready — optional visual alert / debug on GPIO |
-| Camera | Pi Camera Module **v2** + ribbon cable | Ready — Phase 4 |
+| Camera | Pi Camera Module **v2** + ribbon cable | Ready — manual capture (Phase F) |
 | Network | Stable Wi‑Fi | Ready — no Ethernet required |
 
 ### Gaps (optional, not blocking MVP)
