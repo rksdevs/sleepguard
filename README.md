@@ -65,8 +65,8 @@ docs/                           # Architecture, plan, checklist, electronics
 
 | Phase | Status |
 |-------|--------|
-| Phase 0 — Project bootstrap | Code complete — Pi verify pending |
-| Phase 1 — Sensor + GPIO | Not started |
+| Phase 0 — Project bootstrap | Complete |
+| Phase 1 — Sensor + GPIO | Code complete — wire PIR on Pi |
 | Phase 2 — Web dashboard + alerts | Not started |
 | Phase 3 — Concurrency + storage | Not started |
 | Phase 4 — Camera + polish | Not started |

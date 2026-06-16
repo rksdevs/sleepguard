@@ -11,12 +11,12 @@ Action items to run on the **Pi 4** after code is ready for each phase.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 0.1 | Pi 4 imaged with Raspberry Pi OS (64-bit recommended) | [ ] | |
-| 0.2 | Pi connected to home Wi‑Fi | [ ] | Ethernet N/A — Wi‑Fi confirmed on hand |
-| 0.3 | SSH enabled (`ssh pi@<pi-ip>` works) | [ ] | |
-| 0.4 | Hostname or static IP noted (e.g. `192.168.1.x`) | [ ] | |
-| 0.5 | Go 1.24+ installed on Pi (`go version`) | [ ] | Or cross-compile from dev PC |
-| 0.6 | Git clone repo on Pi (or `scp` binary) | [ ] | `git clone ...` |
+| 0.1 | Pi 4 imaged with Raspberry Pi OS (64-bit recommended) | [x] | Re-flashed with English keyboard |
+| 0.2 | Pi connected to home Wi‑Fi | [x] | Manual Wi‑Fi connect; IP may change per network |
+| 0.3 | SSH enabled (`ssh pi@<pi-ip>` works) | [x] | `ssh rksdevs@192.168.0.103` |
+| 0.4 | Hostname or static IP noted (e.g. `192.168.1.x`) | [x] | `192.168.0.103` (current network) |
+| 0.5 | Go 1.24+ installed on Pi (`go version`) | [x] | |
+| 0.6 | Git clone repo on Pi (or `scp` binary) | [x] | `git clone` OK |
 | 0.7 | PIR sensor wired per [electronics.md](electronics.md) | [ ] | Do not power GPIO until wiring checked |
 | 0.8 | Pi Camera Module v2 connected (ribbon seated) | [ ] | Phase 4 — hardware ready, enable in raspi-config later |
 
@@ -28,9 +28,9 @@ Action items to run on the **Pi 4** after code is ready for each phase.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 1.1 | `go run ./cmd/sleepguard` on Pi succeeds | [ ] | May work same as laptop |
-| 1.2 | `go run ./cmd/sleepguard -device nursery -alert-cooldown 45s -debug=false` | [ ] | Verify flags parse |
-| 1.3 | Note any Pi-specific Go module issues | [ ] | e.g. proxy, disk space |
+| 1.1 | `go run ./cmd/sleepguard` on Pi succeeds | [x] | |
+| 1.2 | `go run ./cmd/sleepguard -device nursery -alert-cooldown 45s -debug=false` | [x] | Phase 0 output verified |
+| 1.3 | Note any Pi-specific Go module issues | [x] | None |
 
 **Phase 0 gate:** App runs on Pi with expected flag output.
 
@@ -42,20 +42,21 @@ Action items to run on the **Pi 4** after code is ready for each phase.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 2.1 | Install periph dependencies build on Pi (`go build ./...`) | [ ] | First GPIO code pull |
-| 2.2 | Confirm PIR wiring: VCC, GND, OUT → GPIO (see electronics) | [ ] | |
-| 2.3 | Run app with real PIR reader (not mock) | [ ] | |
-| 2.4 | Wave hand — log shows `motion_detected` (or equivalent) | [ ] | |
-| 2.5 | Hold still — no repeated spam within cooldown window | [ ] | |
-| 2.6 | Unplug OUT wire — app logs sensor error, does not crash | [ ] | |
-| 2.7 | Document actual GPIO pin used in Notes below | [ ] | Default plan: GPIO17 |
+| 2.1 | Pull latest + `go build ./...` on Pi | [ ] | `git pull` then build — needs periph deps |
+| 2.2 | Add user to gpio group: `sudo usermod -aG gpio rksdevs` then re-login | [ ] | Required for GPIO access |
+| 2.3 | Confirm PIR wiring: VCC→5V, GND→GND, OUT→GPIO17 (pin 11) | [ ] | Power off while wiring |
+| 2.4 | Run: `go run ./cmd/sleepguard -device nursery -alert-cooldown 45s -debug` | [ ] | Runs until Ctrl+C — no `-mock-sensor` on Pi |
+| 2.5 | Wait ~60 s (PIR warm-up), wave hand — log shows `motion_detected` | [ ] | |
+| 2.6 | Hold still — no repeated spam within cooldown window | [ ] | |
+| 2.7 | Unplug OUT wire — app logs `sensor_error`, does not crash | [ ] | Optional test |
+| 2.8 | Document GPIO pin used in Notes below | [ ] | Default: GPIO17 |
 
 **Phase 1 gate:** Reliable motion logs on Pi without event spam.
 
 ### Your notes (Phase 1)
 
 ```
-Pi IP:
+Pi IP: 192.168.0.103
 GPIO pin used:
 Cooldown tested (seconds):
 Issues:
@@ -160,7 +161,8 @@ Docker run command used:
 |------|-------|--------------------------|
 | 2026-06-16 | — | Initial checklist created. Phase 0 code exists (flags only). |
 | 2026-06-16 | — | Kit confirmed: Pi 4 4GB, HC-SR501, Camera v2, breadboard/M-F wires, 300Ω+LEDs, Wi‑Fi. |
-| 2026-06-16 | 0 | Phase 0 coded: `internal/config`, `internal/sensor`, slog startup. Pull repo on Pi and run checklist Phase 0. |
+| 2026-06-16 | 0 | Phase 0 verified on Pi (`192.168.0.103`). |
+| 2026-06-16 | 1 | Phase 1 coded: PIR reader, mock sensor, cooldown, motion logs. Pull + wire PIR. |
 
 ---
 

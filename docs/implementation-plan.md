@@ -22,13 +22,15 @@ Phase-by-phase development plan for portfolio delivery. Each phase ends with a *
 
 **Done when:** `go run ./cmd/sleepguard -device nursery -alertInterval 30s` prints config and exits cleanly.
 
-**Status:** Complete (code). Pi verification pending — see [checklist.md](checklist.md) Phase 0.
+**Status:** Complete on Pi.
 
 ---
 
 ## Phase 1 — Sensor and GPIO (MVP core)
 
 **Goal:** Read PIR motion on the Pi and emit debounced events to stdout/logs.
+
+**Status:** Code complete — Pi wiring + verification pending.
 
 | Task | Package / area | Deliverable |
 |------|----------------|-------------|

@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/rksdevs/sleepguard/internal/config"
 	"github.com/rksdevs/sleepguard/internal/sensor"
@@ -16,16 +19,25 @@ func main() {
 	}
 
 	log := config.NewLogger(cfg.Debug)
-	log.Info("SleepGuard starting", "phase", 0)
+	log.Info("SleepGuard starting", "phase", 1)
 	log.Info("configuration loaded", cfg.LogAttrs()...)
 
-	sample := sensor.NewEvent(sensor.EventMotion, cfg.DeviceName, sensor.StateActive)
-	jsonEvent, err := sample.JSON()
+	reader, err := sensor.Open(cfg, log)
 	if err != nil {
-		log.Error("failed to serialize sample event", "error", err)
+		log.Error("failed to open sensor", "error", err)
+		os.Exit(1)
+	}
+	defer reader.Close()
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	log.Info("sensor running — Ctrl+C to stop")
+
+	if err := reader.Run(ctx); err != nil {
+		log.Error("sensor stopped with error", "error", err)
 		os.Exit(1)
 	}
 
-	log.Info("sample event", "summary", sample.String(), "json", string(jsonEvent))
-	log.Info("SleepGuard phase 0 bootstrap complete")
+	log.Info("SleepGuard stopped")
 }

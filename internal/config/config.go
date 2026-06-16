@@ -19,6 +19,7 @@ type Config struct {
 	StorePath     string
 	CameraEnabled bool
 	SnapshotDir   string
+	MockSensor    bool
 }
 
 // Load parses flags and returns the application configuration.
@@ -34,6 +35,7 @@ func Load() (Config, error) {
 	flag.StringVar(&cfg.StorePath, "store-path", "data/events.jsonl", "event history file path")
 	flag.BoolVar(&cfg.CameraEnabled, "camera", false, "enable camera snapshots (phase 4)")
 	flag.StringVar(&cfg.SnapshotDir, "snapshot-dir", "data/snapshots", "directory for motion snapshots")
+	flag.BoolVar(&cfg.MockSensor, "mock-sensor", false, "use simulated sensor (dev machine without GPIO)")
 
 	flag.Parse()
 
@@ -76,5 +78,6 @@ func (c Config) LogAttrs() []any {
 		"store_path", c.StorePath,
 		"camera_enabled", c.CameraEnabled,
 		"snapshot_dir", c.SnapshotDir,
+		"mock_sensor", c.MockSensor,
 	}
 }
