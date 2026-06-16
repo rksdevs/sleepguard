@@ -42,8 +42,10 @@ nano .env
 ```
 
 ```bash
-DATABASE_URL=postgres://sleepguard:PASSWORD@host.docker.internal:5433/sleepguard?sslmode=disable
+DATABASE_URL=postgres://sleepguard:PASSWORD@127.0.0.1:5433/sleepguard?sslmode=disable
 ```
+
+Docker uses `network_mode: host` so the container can reach Postgres on `127.0.0.1:5433` (host Postgres does not listen on the Docker bridge IP).
 
 Generate secrets:
 
@@ -85,7 +87,7 @@ Snapshots (phase F): `/data/sleepguard/data/snapshots`
 ```bash
 cd /data/sleepguard/deploy
 docker compose run --rm cloud \
-  -database-url "postgres://sleepguard:PASSWORD@host.docker.internal:5433/sleepguard?sslmode=disable" \
+  -database-url "postgres://sleepguard:PASSWORD@127.0.0.1:5433/sleepguard?sslmode=disable" \
   -create-device \
   -device-id nursery \
   -device-name "Nursery Pi" \

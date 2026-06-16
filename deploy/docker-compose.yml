@@ -5,17 +5,13 @@ services:
       dockerfile: deploy/Dockerfile.cloud
     container_name: sleepguard-cloud
     restart: unless-stopped
+    # Host Postgres listens on 127.0.0.1:5433 only — bridge IPs cannot reach it.
+    # Host networking lets the container use localhost:5433 (same as wow-logs PM2 apps).
+    network_mode: host
     env_file:
       - .env
     environment:
       SLEEPGUARD_HTTP_ADDR: ":8090"
       SLEEPGUARD_SNAPSHOT_DIR: /data/snapshots
-    ports:
-      - "${SLEEPGUARD_PORT:-8090}:8090"
     volumes:
-      - sleepguard-snapshots:/data/snapshots
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-volumes:
-  sleepguard-snapshots:
+      - /data/sleepguard/data/snapshots:/data/snapshots
