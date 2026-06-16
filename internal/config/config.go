@@ -13,6 +13,7 @@ type Config struct {
 	DeviceName    string
 	HTTPAddr      string
 	AlertCooldown time.Duration
+	ReportInterval time.Duration
 	Debug         bool
 	GPIOPin       int
 	PollInterval  time.Duration
@@ -29,6 +30,7 @@ func Load() (Config, error) {
 	flag.StringVar(&cfg.DeviceName, "device", "nursery", "device name (e.g. nursery)")
 	flag.StringVar(&cfg.HTTPAddr, "http-addr", ":8080", "HTTP listen address")
 	flag.DurationVar(&cfg.AlertCooldown, "alert-cooldown", 30*time.Second, "minimum time between motion alerts")
+	flag.DurationVar(&cfg.ReportInterval, "report-interval", 5*time.Second, "interval for repeating steady-state PIR logs")
 	flag.BoolVar(&cfg.Debug, "debug", false, "enable debug logging")
 	flag.IntVar(&cfg.GPIOPin, "gpio-pin", 17, "BCM GPIO pin for PIR OUT signal")
 	flag.DurationVar(&cfg.PollInterval, "poll-interval", 200*time.Millisecond, "PIR poll interval")
@@ -44,6 +46,9 @@ func Load() (Config, error) {
 	}
 	if cfg.AlertCooldown < 0 {
 		return Config{}, fmt.Errorf("alert-cooldown must not be negative")
+	}
+	if cfg.ReportInterval < 0 {
+		return Config{}, fmt.Errorf("report-interval must not be negative")
 	}
 	if cfg.GPIOPin < 0 {
 		return Config{}, fmt.Errorf("gpio-pin must not be negative")
@@ -72,6 +77,7 @@ func (c Config) LogAttrs() []any {
 		"device", c.DeviceName,
 		"http_addr", c.HTTPAddr,
 		"alert_cooldown", c.AlertCooldown.String(),
+		"report_interval", c.ReportInterval.String(),
 		"debug", c.Debug,
 		"gpio_pin", c.GPIOPin,
 		"poll_interval", c.PollInterval.String(),

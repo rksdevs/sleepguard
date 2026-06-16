@@ -13,17 +13,18 @@ import (
 
 // PIR reads an HC-SR501-style sensor on a GPIO pin.
 type PIR struct {
-	source          string
-	pin             gpio.PinIO
-	pollInterval    time.Duration
-	cooldown        time.Duration
-	log             *slog.Logger
-	lastEmit        time.Time
-	previouslyHigh  bool
+	source         string
+	pin            gpio.PinIO
+	pollInterval   time.Duration
+	reportInterval time.Duration
+	log            *slog.Logger
+	lastReport     time.Time
+	previouslyHigh bool
+	initialized    bool
 }
 
 // NewPIR configures GPIO and returns a PIR reader.
-func NewPIR(source string, pinNumber int, pollInterval, cooldown time.Duration, log *slog.Logger) (*PIR, error) {
+func NewPIR(source string, pinNumber int, pollInterval, reportInterval time.Duration, log *slog.Logger) (*PIR, error) {
 	if _, err := host.Init(); err != nil {
 		return nil, fmt.Errorf("init periph host: %w", err)
 	}
@@ -39,20 +40,20 @@ func NewPIR(source string, pinNumber int, pollInterval, cooldown time.Duration, 
 	}
 
 	return &PIR{
-		source:       source,
-		pin:          pin,
-		pollInterval: pollInterval,
-		cooldown:     cooldown,
-		log:          log,
+		source:         source,
+		pin:            pin,
+		pollInterval:   pollInterval,
+		reportInterval: reportInterval,
+		log:            log,
 	}, nil
 }
 
-// Run polls the PIR pin and logs motion with cooldown debouncing.
+// Run polls the PIR pin and reports initial, transition, and steady-state changes.
 func (p *PIR) Run(ctx context.Context) error {
 	p.log.Info("pir sensor started",
 		"source", p.source,
 		"poll_interval", p.pollInterval.String(),
-		"cooldown", p.cooldown.String(),
+		"report_interval", p.reportInterval.String(),
 	)
 
 	ticker := time.NewTicker(p.pollInterval)
@@ -75,31 +76,46 @@ func (p *PIR) poll() {
 		return
 	}
 
-	if active {
-		if !p.previouslyHigh {
-			p.onRisingEdge()
-		}
-	} else if p.previouslyHigh {
-		p.log.Debug("motion_idle", "source", p.source)
-	}
-
-	p.previouslyHigh = active
-}
-
-func (p *PIR) onRisingEdge() {
 	now := time.Now()
-	if !p.lastEmit.IsZero() && now.Sub(p.lastEmit) < p.cooldown {
-		p.log.Debug("cooldown_skipped",
-			"source", p.source,
-			"since_last", now.Sub(p.lastEmit).String(),
-			"cooldown", p.cooldown.String(),
-		)
+
+	if !p.initialized {
+		p.initialized = true
+		p.previouslyHigh = active
+		p.lastReport = now
+		p.emit(active, PatternInitial, "motion_state")
 		return
 	}
 
-	event := NewEvent(EventMotion, p.source, StateActive)
-	p.lastEmit = now
-	p.log.Info("motion_detected", "event", event.String())
+	if active != p.previouslyHigh {
+		if active {
+			p.emit(active, PatternRise, "motion_detected")
+		} else {
+			p.emit(active, PatternFall, "motion_ended")
+		}
+		p.previouslyHigh = active
+		p.lastReport = now
+		return
+	}
+
+	if p.reportInterval > 0 && now.Sub(p.lastReport) >= p.reportInterval {
+		if active {
+			p.emit(active, PatternHold, "motion_active")
+		} else {
+			p.emit(active, PatternHold, "motion_idle")
+		}
+		p.lastReport = now
+	}
+}
+
+func (p *PIR) emit(active bool, pattern, message string) {
+	state := StateIdle
+	if active {
+		state = StateActive
+	}
+
+	event := NewObservedEvent(EventMotion, p.source, state, pattern)
+	p.log.Info(message, "event", event.String())
+	p.previouslyHigh = active
 }
 
 func (p *PIR) readMotion() (bool, error) {

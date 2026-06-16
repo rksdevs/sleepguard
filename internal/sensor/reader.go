@@ -18,10 +18,10 @@ type MotionReader interface {
 // Open creates a motion reader from configuration.
 func Open(cfg config.Config, log *slog.Logger) (MotionReader, error) {
 	if cfg.MockSensor {
-		return NewMock(cfg.DeviceName, cfg.AlertCooldown, log), nil
+		return NewMock(cfg.DeviceName, cfg.ReportInterval, log), nil
 	}
 	if runtime.GOOS != "linux" {
 		return nil, fmt.Errorf("GPIO sensor requires linux (use -mock-sensor on other platforms)")
 	}
-	return NewPIR(cfg.DeviceName, cfg.GPIOPin, cfg.PollInterval, cfg.AlertCooldown, log)
+	return NewPIR(cfg.DeviceName, cfg.GPIOPin, cfg.PollInterval, cfg.ReportInterval, log)
 }
