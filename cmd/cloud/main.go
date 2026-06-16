@@ -8,8 +8,10 @@ import (
 	"syscall"
 
 	"github.com/rksdevs/sleepguard/internal/cloud/api"
+	"github.com/rksdevs/sleepguard/internal/cloud/cleanup"
 	cloudcfg "github.com/rksdevs/sleepguard/internal/cloud/config"
 	"github.com/rksdevs/sleepguard/internal/cloud/migrate"
+	"github.com/rksdevs/sleepguard/internal/cloud/push"
 	"github.com/rksdevs/sleepguard/internal/cloud/store"
 	"github.com/rksdevs/sleepguard/internal/config"
 )
@@ -64,18 +66,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.Info("SleepGuard cloud starting", "phase", "A")
+	log.Info("SleepGuard cloud starting", "phase", "D")
 	log.Info("configuration",
 		"http_addr", cfg.HTTPAddr,
 		"snapshot_dir", cfg.SnapshotDir,
 		"online_after", cfg.OnlineAfter.String(),
 		"read_api_key_set", cfg.ReadAPIKey != "",
+		"event_retention", cfg.EventRetention.String(),
+		"cleanup_interval", cfg.CleanupInterval.String(),
+		"push_enabled", cfg.VAPIDPublicKey != "" && cfg.VAPIDPrivateKey != "",
 	)
 
-	server := api.New(cfg, st, log)
+	pusher := push.NewSender(cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject, st, log)
+	cleaner := cleanup.New(st, cfg.SnapshotDir, cfg.EventRetention, log)
 
 	runCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	cleanup.StartScheduler(runCtx, cleaner, cfg.CleanupInterval, log)
+
+	server := api.New(cfg, st, pusher, cleaner, log)
 
 	if err := server.ListenAndServe(runCtx); err != nil {
 		log.Error("server stopped with error", "error", err)

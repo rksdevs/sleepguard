@@ -10,27 +10,35 @@ import (
 	"time"
 
 	"github.com/rksdevs/sleepguard/internal/cloud/auth"
+	"github.com/rksdevs/sleepguard/internal/cloud/cleanup"
 	cloudcfg "github.com/rksdevs/sleepguard/internal/cloud/config"
+	"github.com/rksdevs/sleepguard/internal/cloud/push"
 	"github.com/rksdevs/sleepguard/internal/cloud/store"
 	"github.com/rksdevs/sleepguard/internal/domain"
 )
 
+var errUnauthorized = errors.New("unauthorized")
+
 // Server serves the SleepGuard cloud HTTP API.
 type Server struct {
-	cfg    cloudcfg.Config
-	store  *store.Postgres
-	log    *slog.Logger
-	mux    *http.ServeMux
-	server *http.Server
+	cfg     cloudcfg.Config
+	store   *store.Postgres
+	push    *push.Sender
+	cleanup *cleanup.Service
+	log     *slog.Logger
+	mux     *http.ServeMux
+	server  *http.Server
 }
 
 // New creates a configured API server.
-func New(cfg cloudcfg.Config, st *store.Postgres, log *slog.Logger) *Server {
+func New(cfg cloudcfg.Config, st *store.Postgres, pusher *push.Sender, cleaner *cleanup.Service, log *slog.Logger) *Server {
 	s := &Server{
-		cfg:   cfg,
-		store: st,
-		log:   log,
-		mux:   http.NewServeMux(),
+		cfg:     cfg,
+		store:   st,
+		push:    pusher,
+		cleanup: cleaner,
+		log:     log,
+		mux:     http.NewServeMux(),
 	}
 	s.routes()
 	return s
@@ -42,6 +50,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/heartbeat", s.handleHeartbeat)
 	s.mux.HandleFunc("GET /api/v1/events", s.handleListEvents)
 	s.mux.HandleFunc("GET /api/v1/devices/{id}/status", s.handleDeviceStatus)
+	s.mux.HandleFunc("POST /api/v1/admin/cleanup", s.handleAdminCleanup)
+	s.mux.HandleFunc("GET /api/v1/push/vapid-key", s.handleVAPIDPublicKey)
+	s.mux.HandleFunc("GET /api/v1/pair", s.handleListPairings)
+	s.mux.HandleFunc("POST /api/v1/pair", s.handleCreatePairing)
+	s.mux.HandleFunc("DELETE /api/v1/pair/{id}", s.handleUnpair)
 }
 
 // ListenAndServe starts the HTTP server until ctx is cancelled.
@@ -73,7 +86,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 func (s *Server) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -118,6 +131,10 @@ func (s *Server) handleIngestEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = s.store.TouchHeartbeat(r.Context(), deviceID, time.Now().UTC())
+
+	if event.Pattern == domain.PatternRise && s.push != nil {
+		go s.push.NotifyMotion(context.Background(), deviceID, event)
+	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"event": event,
@@ -210,7 +227,7 @@ func (s *Server) handleDeviceStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authenticateDevice(r *http.Request) (string, error) {
-	token, err := auth.BearerToken(r.Header.Get("Authorization"))
+	token, err := authBearer(r)
 	if err != nil {
 		return "", err
 	}
@@ -218,7 +235,7 @@ func (s *Server) authenticateDevice(r *http.Request) (string, error) {
 }
 
 func (s *Server) authenticateRead(r *http.Request) (string, error) {
-	token, err := auth.BearerToken(r.Header.Get("Authorization"))
+	token, err := authBearer(r)
 	if err != nil {
 		return "", err
 	}
@@ -228,6 +245,10 @@ func (s *Server) authenticateRead(r *http.Request) (string, error) {
 	}
 
 	return s.store.DeviceByToken(r.Context(), token)
+}
+
+func authBearer(r *http.Request) (string, error) {
+	return auth.BearerToken(r.Header.Get("Authorization"))
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

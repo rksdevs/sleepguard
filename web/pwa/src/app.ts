@@ -1,11 +1,25 @@
-import { fetchEvents, fetchStatus } from "./api";
+import {
+  fetchEvents,
+  fetchPairings,
+  fetchStatus,
+  pairDevice,
+  runCleanup,
+  unpairDevice,
+} from "./api";
+import {
+  clearPairingId,
+  loadPairingId,
+  pushSupported,
+  savePairingId,
+  subscribeForPush,
+} from "./push";
 import {
   clearSettings,
   defaultApiBase,
   loadSettings,
   saveSettings,
 } from "./settings";
-import type { DeviceStatus, MotionEvent, Settings } from "./types";
+import type { DeviceStatus, MotionEvent, PairedClient, Settings } from "./types";
 
 const POLL_MS = 3000;
 
@@ -70,17 +84,36 @@ function renderLogin(root: HTMLElement, onSave: (s: Settings) => void): void {
   });
 }
 
-function renderDashboard(
-  root: HTMLElement,
-  settings: Settings,
-  status: DeviceStatus,
-  events: MotionEvent[],
-  error: string | null,
-): void {
+interface DashboardView {
+  settings: Settings;
+  status: DeviceStatus;
+  events: MotionEvent[];
+  pairings: PairedClient[];
+  pairingId: string | null;
+  error: string | null;
+  notice: string | null;
+}
+
+function renderPairingRows(pairings: PairedClient[], localId: string | null): string {
+  if (pairings.length === 0) {
+    return `<p class="muted" style="margin:0">No phones paired yet.</p>`;
+  }
+  return `<ul class="pairing-list">${pairings
+    .map(
+      (p) => `
+      <li>
+        <span>${p.name}${p.id === localId ? ' <em class="muted">(this device)</em>' : ""}</span>
+        <span class="muted">${formatTime(p.created_at)}</span>
+      </li>`,
+    )
+    .join("")}</ul>`;
+}
+
+function renderDashboard(root: HTMLElement, view: DashboardView): void {
   const rows =
-    events.length === 0
+    view.events.length === 0
       ? `<tr><td colspan="4" class="muted">No events yet — motion will appear here.</td></tr>`
-      : events
+      : view.events
           .map(
             (e) => `
         <tr>
@@ -92,6 +125,11 @@ function renderDashboard(
           )
           .join("");
 
+  const pushOk = pushSupported();
+  const pairedHere = view.pairingId
+    ? view.pairings.some((p) => p.id === view.pairingId)
+    : false;
+
   root.innerHTML = `
     <div class="toolbar">
       <div>
@@ -99,19 +137,39 @@ function renderDashboard(
           ${BRAND_ICON}
           <h1>SleepGuard</h1>
         </div>
-        <p class="subtitle" style="margin-bottom:0">${status.name}
-          <span class="badge ${status.online ? "online" : "offline"}">${status.online ? "online" : "offline"}</span>
+        <p class="subtitle" style="margin-bottom:0">${view.status.name}
+          <span class="badge ${view.status.online ? "online" : "offline"}">${view.status.online ? "online" : "offline"}</span>
         </p>
       </div>
       <button type="button" class="secondary" id="logout-btn">Disconnect</button>
     </div>
 
-    ${error ? `<p class="error">${error}</p>` : ""}
+    ${view.error ? `<p class="error">${view.error}</p>` : ""}
+    ${view.notice ? `<p class="notice">${view.notice}</p>` : ""}
 
     <div class="stats">
-      <div class="card stat"><span>Total motion</span><strong>${status.event_count}</strong></div>
-      <div class="card stat"><span>In view</span><strong>${events.length}</strong></div>
-      <div class="card stat"><span>Last seen</span><strong style="font-size:0.88rem;font-weight:500;color:var(--text)">${status.last_seen_at ? formatTime(status.last_seen_at) : "—"}</strong></div>
+      <div class="card stat"><span>Total motion</span><strong>${view.status.event_count}</strong></div>
+      <div class="card stat"><span>In view</span><strong>${view.events.length}</strong></div>
+      <div class="card stat"><span>Last seen</span><strong style="font-size:0.88rem;font-weight:500;color:var(--text)">${view.status.last_seen_at ? formatTime(view.status.last_seen_at) : "—"}</strong></div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar" style="margin-bottom:0.5rem">
+        <span class="toolbar-title">Notifications</span>
+      </div>
+      ${
+        pushOk
+          ? `<p class="muted" style="margin-top:0">Get alerted on your phone when motion rises.</p>
+      <div class="actions">
+        ${
+          pairedHere
+            ? `<button type="button" class="secondary" id="unpair-btn">Turn off notifications</button>`
+            : `<button type="button" id="pair-btn">Enable notifications</button>`
+        }
+      </div>
+      ${renderPairingRows(view.pairings, view.pairingId)}`
+          : `<p class="muted" style="margin:0">Push not supported in this browser.</p>`
+      }
     </div>
 
     <div class="card">
@@ -133,42 +191,125 @@ function renderDashboard(
         </table>
       </div>
     </div>
+
+    <div class="card admin-card">
+      <div class="toolbar" style="margin-bottom:0.5rem">
+        <span class="toolbar-title">Data cleanup</span>
+      </div>
+      <p class="muted" style="margin-top:0">Remove events and snapshots older than 24 hours.</p>
+      <button type="button" class="secondary" id="cleanup-btn">Run cleanup now</button>
+    </div>
   `;
 
   root.querySelector("#logout-btn")?.addEventListener("click", () => {
     clearSettings();
+    clearPairingId();
     window.location.reload();
+  });
+
+  root.querySelector("#pair-btn")?.addEventListener("click", () => {
+    void (async () => {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") {
+        view.notice = "Notification permission denied.";
+        renderDashboard(root, view);
+        return;
+      }
+      try {
+        const sub = await subscribeForPush(view.settings.apiBase, view.settings.readKey);
+        const client = await pairDevice(view.settings, sub);
+        savePairingId(client.id);
+        view.pairingId = client.id;
+        view.pairings = await fetchPairings(view.settings);
+        view.notice = "Notifications enabled for this phone.";
+        view.error = null;
+      } catch (err) {
+        view.notice =
+          err instanceof Error ? err.message : "Could not enable notifications.";
+      }
+      renderDashboard(root, view);
+    })();
+  });
+
+  root.querySelector("#unpair-btn")?.addEventListener("click", () => {
+    void (async () => {
+      if (!view.pairingId) {
+        return;
+      }
+      try {
+        await unpairDevice(view.settings, view.pairingId);
+        clearPairingId();
+        view.pairingId = null;
+        view.pairings = await fetchPairings(view.settings);
+        view.notice = "Notifications turned off.";
+      } catch (err) {
+        view.notice = err instanceof Error ? err.message : "Unpair failed.";
+      }
+      renderDashboard(root, view);
+    })();
+  });
+
+  root.querySelector("#cleanup-btn")?.addEventListener("click", () => {
+    void (async () => {
+      try {
+        const result = await runCleanup(view.settings);
+        view.notice = `Cleanup done — ${result.events_deleted} events, ${result.snapshots_deleted} snapshots removed.`;
+        view.error = null;
+        const [status, { events }] = await Promise.all([
+          fetchStatus(view.settings),
+          fetchEvents(view.settings),
+        ]);
+        view.status = status;
+        view.events = events;
+      } catch (err) {
+        view.notice = err instanceof Error ? err.message : "Cleanup failed.";
+      }
+      renderDashboard(root, view);
+    })();
   });
 }
 
 export function mountApp(root: HTMLElement): void {
   let settings = loadSettings();
   let timer: number | undefined;
+  let notice: string | null = null;
 
   const tick = async () => {
     if (!settings) {
       return;
     }
     try {
-      const [status, { events }] = await Promise.all([
+      const [status, { events }, pairings] = await Promise.all([
         fetchStatus(settings),
         fetchEvents(settings),
+        fetchPairings(settings).catch(() => [] as PairedClient[]),
       ]);
-      renderDashboard(root, settings, status, events, null);
+      renderDashboard(root, {
+        settings,
+        status,
+        events,
+        pairings,
+        pairingId: loadPairingId(),
+        error: null,
+        notice,
+      });
+      notice = null;
     } catch (err) {
       const message = err instanceof Error ? err.message : "request failed";
-      renderDashboard(
-        root,
+      renderDashboard(root, {
         settings,
-        {
+        status: {
           id: settings.deviceId,
           name: settings.deviceId,
           event_count: 0,
           online: false,
         },
-        [],
-        message,
-      );
+        events: [],
+        pairings: [],
+        pairingId: loadPairingId(),
+        error: message,
+        notice,
+      });
     }
   };
 

@@ -196,6 +196,50 @@ curl -s "https://sleepguard.rksdevs.in/api/v1/events?device_id=nursery&limit=10"
 | POST | `/api/v1/heartbeat` | device token | Update last_seen |
 | GET | `/api/v1/events?device_id=&limit=` | read key or device token | List events |
 | GET | `/api/v1/devices/{id}/status` | read key or device token | Device status |
+| POST | `/api/v1/admin/cleanup` | read key | Purge old events/snapshots |
+| GET | `/api/v1/push/vapid-key` | none | VAPID public key for PWA |
+| POST | `/api/v1/pair` | read key | Register phone for push |
+| GET | `/api/v1/pair?device_id=` | read key | List paired phones |
+| DELETE | `/api/v1/pair/{id}` | read key | Unpair a phone |
+
+---
+
+## Phase D — Push notifications + cleanup
+
+### VAPID keys (one-time)
+
+On the server (or any machine with Go):
+
+```bash
+go run github.com/SherClockHolmes/webpush-go/cmd/genkeys@latest
+```
+
+Add to `deploy/.env`:
+
+```bash
+SLEEPGUARD_VAPID_PUBLIC_KEY=...
+SLEEPGUARD_VAPID_PRIVATE_KEY=...
+SLEEPGUARD_EVENT_RETENTION=24h
+SLEEPGUARD_CLEANUP_INTERVAL=24h
+```
+
+Rebuild and restart:
+
+```bash
+cd /data/sleepguard
+git pull
+docker compose -f deploy/docker-compose.yml up -d --build
+bash deploy/build-pwa.sh
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### Test notifications
+
+1. Open PWA on your phone (Add to Home Screen).
+2. Tap **Enable notifications** and allow permission.
+3. Wave at the PIR — you should get a push within a few seconds on **rise** events.
+
+Manual cleanup from PWA: **Run cleanup now** (or `curl -X POST .../api/v1/admin/cleanup -H "Authorization: Bearer READ_KEY"`).
 
 ## Local dev without Docker
 

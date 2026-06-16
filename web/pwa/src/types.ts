@@ -28,3 +28,23 @@ export interface DeviceStatus {
   event_count: number;
   online: boolean;
 }
+
+export interface PairedClient {
+  id: string;
+  device_id: string;
+  name: string;
+  notify_on_rise: boolean;
+  created_at: string;
+}
+
+export interface PairingsResponse {
+  device_id: string;
+  count: number;
+  clients: PairedClient[];
+}
+
+export interface CleanupResult {
+  events_deleted: number;
+  snapshots_deleted: number;
+  cutoff: string;
+}

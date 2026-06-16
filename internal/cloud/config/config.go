@@ -24,6 +24,11 @@ type Config struct {
 	BootstrapDeviceID   string
 	BootstrapDeviceName string
 	BootstrapDeviceToken string
+	EventRetention       time.Duration
+	CleanupInterval      time.Duration
+	VAPIDPublicKey       string
+	VAPIDPrivateKey      string
+	VAPIDSubject         string
 }
 
 // Load parses flags and environment variables.
@@ -44,6 +49,11 @@ func Load() (Config, error) {
 	flag.StringVar(&cfg.BootstrapDeviceID, "bootstrap-device-id", os.Getenv("SLEEPGUARD_BOOTSTRAP_DEVICE_ID"), "create device on startup if missing")
 	flag.StringVar(&cfg.BootstrapDeviceName, "bootstrap-device-name", os.Getenv("SLEEPGUARD_BOOTSTRAP_DEVICE_NAME"), "name for bootstrap device")
 	flag.StringVar(&cfg.BootstrapDeviceToken, "bootstrap-device-token", os.Getenv("SLEEPGUARD_BOOTSTRAP_DEVICE_TOKEN"), "token for bootstrap device")
+	flag.DurationVar(&cfg.EventRetention, "event-retention", envDuration("SLEEPGUARD_EVENT_RETENTION", 24*time.Hour), "delete events older than this")
+	flag.DurationVar(&cfg.CleanupInterval, "cleanup-interval", envDuration("SLEEPGUARD_CLEANUP_INTERVAL", 24*time.Hour), "automatic cleanup interval (0 disables)")
+	flag.StringVar(&cfg.VAPIDPublicKey, "vapid-public-key", os.Getenv("SLEEPGUARD_VAPID_PUBLIC_KEY"), "Web Push VAPID public key")
+	flag.StringVar(&cfg.VAPIDPrivateKey, "vapid-private-key", os.Getenv("SLEEPGUARD_VAPID_PRIVATE_KEY"), "Web Push VAPID private key")
+	flag.StringVar(&cfg.VAPIDSubject, "vapid-subject", envOr("SLEEPGUARD_VAPID_SUBJECT", "mailto:sleepguard@rksdevs.in"), "Web Push VAPID subject (mailto: or https:)")
 
 	flag.Parse()
 
@@ -72,4 +82,16 @@ func envOr(key, fallback string) string {
 func envBool(key string) bool {
 	v := strings.ToLower(os.Getenv(key))
 	return v == "1" || v == "true" || v == "yes"
+}
+
+func envDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return fallback
+	}
+	return d
 }

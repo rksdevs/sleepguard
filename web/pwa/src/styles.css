@@ -333,6 +333,42 @@ button.secondary:hover {
   animation: pulse 2s ease-in-out infinite;
 }
 
+.notice {
+  margin: 0 0 0.85rem;
+  padding: 0.65rem 0.85rem;
+  border-radius: 10px;
+  background: #e8f4ec;
+  color: #2d5a3d;
+  border: 1px solid #c5e0ce;
+  font-size: 0.9rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.pairing-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pairing-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--border);
+  font-size: 0.88rem;
+}
+
+.admin-card {
+  margin-top: 0.85rem;
+}
+
 @keyframes pulse {
   0%,
   100% {
