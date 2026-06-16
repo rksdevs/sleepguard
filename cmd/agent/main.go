@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -12,6 +13,7 @@ import (
 	agentcfg "github.com/rksdevs/sleepguard/internal/agent/config"
 	"github.com/rksdevs/sleepguard/internal/agent/queue"
 	"github.com/rksdevs/sleepguard/internal/agent/upload"
+	"github.com/rksdevs/sleepguard/internal/camera"
 	"github.com/rksdevs/sleepguard/internal/domain"
 	"github.com/rksdevs/sleepguard/internal/sensor"
 )
@@ -24,7 +26,7 @@ func main() {
 	}
 
 	log := agentcfg.NewLogger(cfg.Debug)
-	log.Info("SleepGuard agent starting", "phase", "C")
+	log.Info("SleepGuard agent starting", "phase", "F")
 	log.Info("configuration",
 		"cloud_url", cfg.CloudURL,
 		"device", cfg.DeviceName,
@@ -32,6 +34,8 @@ func main() {
 		"queue_path", cfg.QueuePath,
 		"heartbeat_interval", cfg.HeartbeatInterval.String(),
 		"mock_sensor", cfg.MockSensor,
+		"mock_camera", cfg.MockCamera,
+		"capture_dir", cfg.CaptureDir,
 	)
 
 	q, err := queue.NewFile(cfg.QueuePath)
@@ -41,6 +45,10 @@ func main() {
 	}
 
 	client := upload.NewClient(cfg.CloudURL, cfg.DeviceToken, cfg.UploadTimeout, log)
+	camCfg := camera.Config{
+		Mock:    cfg.MockCamera,
+		Timeout: cfg.CaptureTimeout,
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -81,6 +89,21 @@ func main() {
 	}
 	defer reader.Close()
 
+	runCapture := func() {
+		path := filepath.Join(cfg.CaptureDir, time.Now().UTC().Format("20060102-150405.000")+".jpg")
+		if err := camera.Capture(ctx, camCfg, path); err != nil {
+			log.Error("camera capture failed", "error", err)
+			return
+		}
+		defer os.Remove(path)
+
+		if err := client.PostSnapshot(ctx, path); err != nil {
+			log.Error("snapshot upload failed", "error", err)
+			return
+		}
+		log.Info("snapshot uploaded")
+	}
+
 	var wg sync.WaitGroup
 
 	wg.Add(1)
@@ -90,9 +113,14 @@ func main() {
 		defer ticker.Stop()
 
 		sendHeartbeat := func() {
-			if err := client.Heartbeat(ctx); err != nil {
+			resp, err := client.Heartbeat(ctx)
+			if err != nil {
 				log.Warn("heartbeat failed", "error", err)
 				return
+			}
+			if resp.CaptureSnapshot {
+				log.Info("capture requested from app")
+				go runCapture()
 			}
 			log.Debug("heartbeat sent")
 		}

@@ -365,8 +365,32 @@ button.secondary:hover {
   font-size: 0.88rem;
 }
 
+.snapshot-preview {
+  margin: 0.75rem 0 0;
+}
+
+.snapshot-preview img {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-hover);
+}
+
+.snapshot-preview figcaption {
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+}
+
 .admin-card {
   margin-top: 0.85rem;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 @keyframes pulse {

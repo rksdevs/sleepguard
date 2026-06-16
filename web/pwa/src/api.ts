@@ -5,6 +5,8 @@ import type {
   PairedClient,
   PairingsResponse,
   Settings,
+  Snapshot,
+  SnapshotsResponse,
 } from "./types";
 
 function headers(readKey: string): HeadersInit {
@@ -109,4 +111,45 @@ export async function runCleanup(settings: Settings): Promise<CleanupResult> {
     throw new Error(`cleanup ${res.status}: ${body}`);
   }
   return res.json() as Promise<CleanupResult>;
+}
+
+export async function requestCapture(settings: Settings): Promise<void> {
+  const url = `${base(settings)}/api/v1/devices/${encodeURIComponent(settings.deviceId)}/capture`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: headers(settings.readKey),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`capture ${res.status}: ${body}`);
+  }
+}
+
+export async function fetchSnapshots(
+  settings: Settings,
+  limit = 5,
+): Promise<Snapshot[]> {
+  const url = new URL(`${base(settings)}/api/v1/snapshots`);
+  url.searchParams.set("device_id", settings.deviceId);
+  url.searchParams.set("limit", String(limit));
+  const res = await fetch(url, { headers: headers(settings.readKey) });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`snapshots ${res.status}: ${body}`);
+  }
+  const data = (await res.json()) as SnapshotsResponse;
+  return data.snapshots ?? [];
+}
+
+export async function fetchSnapshotBlob(
+  settings: Settings,
+  snapshotId: string,
+): Promise<Blob> {
+  const url = `${base(settings)}/api/v1/snapshots/${encodeURIComponent(snapshotId)}/image`;
+  const res = await fetch(url, { headers: headers(settings.readKey) });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`snapshot image ${res.status}: ${body}`);
+  }
+  return res.blob();
 }

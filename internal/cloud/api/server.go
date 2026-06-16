@@ -12,7 +12,9 @@ import (
 	"github.com/rksdevs/sleepguard/internal/cloud/auth"
 	"github.com/rksdevs/sleepguard/internal/cloud/cleanup"
 	cloudcfg "github.com/rksdevs/sleepguard/internal/cloud/config"
+	"github.com/rksdevs/sleepguard/internal/cloud/commands"
 	"github.com/rksdevs/sleepguard/internal/cloud/push"
+	"github.com/rksdevs/sleepguard/internal/cloud/rules"
 	"github.com/rksdevs/sleepguard/internal/cloud/store"
 	"github.com/rksdevs/sleepguard/internal/domain"
 )
@@ -25,20 +27,24 @@ type Server struct {
 	store   *store.Postgres
 	push    *push.Sender
 	cleanup *cleanup.Service
+	rules   *rules.Engine
+	captures *commands.CaptureQueue
 	log     *slog.Logger
 	mux     *http.ServeMux
 	server  *http.Server
 }
 
 // New creates a configured API server.
-func New(cfg cloudcfg.Config, st *store.Postgres, pusher *push.Sender, cleaner *cleanup.Service, log *slog.Logger) *Server {
+func New(cfg cloudcfg.Config, st *store.Postgres, pusher *push.Sender, cleaner *cleanup.Service, ruleEngine *rules.Engine, captures *commands.CaptureQueue, log *slog.Logger) *Server {
 	s := &Server{
-		cfg:     cfg,
-		store:   st,
-		push:    pusher,
-		cleanup: cleaner,
-		log:     log,
-		mux:     http.NewServeMux(),
+		cfg:      cfg,
+		store:    st,
+		push:     pusher,
+		cleanup:  cleaner,
+		rules:    ruleEngine,
+		captures: captures,
+		log:      log,
+		mux:      http.NewServeMux(),
 	}
 	s.routes()
 	return s
@@ -50,6 +56,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/heartbeat", s.handleHeartbeat)
 	s.mux.HandleFunc("GET /api/v1/events", s.handleListEvents)
 	s.mux.HandleFunc("GET /api/v1/devices/{id}/status", s.handleDeviceStatus)
+	s.mux.HandleFunc("POST /api/v1/devices/{id}/capture", s.handleRequestCapture)
+	s.mux.HandleFunc("GET /api/v1/snapshots", s.handleListSnapshots)
+	s.mux.HandleFunc("GET /api/v1/snapshots/{id}/image", s.handleSnapshotImage)
+	s.mux.HandleFunc("POST /api/v1/snapshots", s.handleUploadSnapshot)
 	s.mux.HandleFunc("POST /api/v1/admin/cleanup", s.handleAdminCleanup)
 	s.mux.HandleFunc("GET /api/v1/push/vapid-key", s.handleVAPIDPublicKey)
 	s.mux.HandleFunc("GET /api/v1/pair", s.handleListPairings)
@@ -132,8 +142,11 @@ func (s *Server) handleIngestEvent(w http.ResponseWriter, r *http.Request) {
 
 	_ = s.store.TouchHeartbeat(r.Context(), deviceID, time.Now().UTC())
 
-	if event.Pattern == domain.PatternRise && s.push != nil {
-		go s.push.NotifyMotion(context.Background(), deviceID, event)
+	if s.rules != nil {
+		result := s.rules.Process(deviceID, event.Pattern, event.Timestamp)
+		if result.Notify && s.push != nil {
+			go s.push.NotifyCycleAlert(context.Background(), deviceID, result.Cycles, event)
+		}
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]any{
@@ -158,9 +171,15 @@ func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"device_id": deviceID,
-		"last_seen_at": at,
+	captureSnapshot := false
+	if s.captures != nil {
+		captureSnapshot = s.captures.Take(deviceID)
+	}
+
+	writeJSON(w, http.StatusOK, domain.HeartbeatResponse{
+		DeviceID:        deviceID,
+		LastSeenAt:      at,
+		CaptureSnapshot: captureSnapshot,
 	})
 }
 

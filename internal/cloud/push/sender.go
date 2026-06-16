@@ -52,7 +52,30 @@ func (s *Sender) PublicKey() string {
 	return s.publicKey
 }
 
-// NotifyMotion sends a push for a motion rise event.
+// NotifyCycleAlert sends a push when sustained motion cycles hit the threshold.
+func (s *Sender) NotifyCycleAlert(ctx context.Context, deviceID string, cycles int, event domain.Event) {
+	if s == nil {
+		return
+	}
+	targets, err := s.store.ListPushTargets(ctx, deviceID)
+	if err != nil {
+		s.log.Error("list push targets failed", "error", err)
+		return
+	}
+	if len(targets) == 0 {
+		return
+	}
+
+	payload, _ := json.Marshal(map[string]string{
+		"title": "SleepGuard — sustained motion",
+		"body":  fmt.Sprintf("%d motion cycles — open the app to capture an image (%s)", cycles, event.Source),
+		"url":   "/",
+	})
+
+	s.send(ctx, targets, payload)
+}
+
+// NotifyMotion sends a push for a single motion rise (legacy; prefer cycle rules).
 func (s *Sender) NotifyMotion(ctx context.Context, deviceID string, event domain.Event) {
 	if s == nil {
 		return
@@ -72,6 +95,10 @@ func (s *Sender) NotifyMotion(ctx context.Context, deviceID string, event domain
 		"url":   "/",
 	})
 
+	s.send(ctx, targets, payload)
+}
+
+func (s *Sender) send(ctx context.Context, targets []store.PushTarget, payload []byte) {
 	for _, target := range targets {
 		sub := &webpush.Subscription{
 			Endpoint: target.Endpoint,

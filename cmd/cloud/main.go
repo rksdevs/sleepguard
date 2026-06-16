@@ -9,9 +9,11 @@ import (
 
 	"github.com/rksdevs/sleepguard/internal/cloud/api"
 	"github.com/rksdevs/sleepguard/internal/cloud/cleanup"
+	"github.com/rksdevs/sleepguard/internal/cloud/commands"
 	cloudcfg "github.com/rksdevs/sleepguard/internal/cloud/config"
 	"github.com/rksdevs/sleepguard/internal/cloud/migrate"
 	"github.com/rksdevs/sleepguard/internal/cloud/push"
+	"github.com/rksdevs/sleepguard/internal/cloud/rules"
 	"github.com/rksdevs/sleepguard/internal/cloud/store"
 	"github.com/rksdevs/sleepguard/internal/config"
 )
@@ -66,7 +68,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.Info("SleepGuard cloud starting", "phase", "D")
+	log.Info("SleepGuard cloud starting", "phase", "F")
 	log.Info("configuration",
 		"http_addr", cfg.HTTPAddr,
 		"snapshot_dir", cfg.SnapshotDir,
@@ -75,17 +77,23 @@ func main() {
 		"event_retention", cfg.EventRetention.String(),
 		"cleanup_interval", cfg.CleanupInterval.String(),
 		"push_enabled", cfg.VAPIDPublicKey != "" && cfg.VAPIDPrivateKey != "",
+		"rule_notify_cycles", cfg.RuleNotifyCycles,
 	)
 
 	pusher := push.NewSender(cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDSubject, st, log)
 	cleaner := cleanup.New(st, cfg.SnapshotDir, cfg.EventRetention, log)
+	captureQueue := commands.NewCaptureQueue()
+	ruleEngine := rules.New(rules.Config{
+		NotifyCycles: cfg.RuleNotifyCycles,
+		IdleReset:    cfg.RuleIdleReset,
+	}, log)
 
 	runCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	cleanup.StartScheduler(runCtx, cleaner, cfg.CleanupInterval, log)
 
-	server := api.New(cfg, st, pusher, cleaner, log)
+	server := api.New(cfg, st, pusher, cleaner, ruleEngine, captureQueue, log)
 
 	if err := server.ListenAndServe(runCtx); err != nil {
 		log.Error("server stopped with error", "error", err)

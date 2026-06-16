@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -53,13 +56,60 @@ func (c *Client) PostEvent(ctx context.Context, event domain.IngestEvent) error 
 	return c.do(req)
 }
 
-// Heartbeat updates device last_seen on the cloud.
-func (c *Client) Heartbeat(ctx context.Context) error {
+// Heartbeat updates device last_seen and returns optional commands from the cloud.
+func (c *Client) Heartbeat(ctx context.Context) (domain.HeartbeatResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/heartbeat", nil)
+	if err != nil {
+		return domain.HeartbeatResponse{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("User-Agent", "SleepGuard-Agent/1.0")
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return domain.HeartbeatResponse{}, err
+	}
+	defer res.Body.Close()
+
+	b, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return domain.HeartbeatResponse{}, fmt.Errorf("cloud returned %d: %s", res.StatusCode, strings.TrimSpace(string(b)))
+	}
+
+	var resp domain.HeartbeatResponse
+	if err := json.Unmarshal(b, &resp); err != nil {
+		return domain.HeartbeatResponse{}, fmt.Errorf("decode heartbeat response: %w", err)
+	}
+	return resp, nil
+}
+
+// PostSnapshot uploads a JPEG still image to the cloud.
+func (c *Client) PostSnapshot(ctx context.Context, imagePath string) error {
+	file, err := os.Open(imagePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("image", filepath.Base(imagePath))
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(part, file); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/api/v1/snapshots", &body)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("User-Agent", "SleepGuard-Agent/1.0")
 
 	return c.do(req)

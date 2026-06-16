@@ -48,3 +48,16 @@ export interface CleanupResult {
   snapshots_deleted: number;
   cutoff: string;
 }
+
+export interface Snapshot {
+  id: string;
+  device_id: string;
+  captured_at: string;
+  size_bytes: number;
+}
+
+export interface SnapshotsResponse {
+  device_id: string;
+  count: number;
+  snapshots: Snapshot[];
+}

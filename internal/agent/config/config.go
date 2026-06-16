@@ -23,6 +23,9 @@ type Config struct {
 	GPIOPin            int
 	PollInterval       time.Duration
 	ReportInterval     time.Duration
+	MockCamera         bool
+	CaptureDir         string
+	CaptureTimeout     time.Duration
 }
 
 // Load parses flags and environment for the edge agent.
@@ -42,6 +45,9 @@ func Load() (Config, error) {
 	flag.IntVar(&cfg.GPIOPin, "gpio-pin", 17, "BCM GPIO pin for PIR OUT")
 	flag.DurationVar(&cfg.PollInterval, "poll-interval", 200*time.Millisecond, "PIR poll interval")
 	flag.DurationVar(&cfg.ReportInterval, "report-interval", 5*time.Second, "steady-state log interval")
+	flag.BoolVar(&cfg.MockCamera, "mock-camera", envBool("SLEEPGUARD_MOCK_CAMERA"), "use placeholder image instead of Pi camera")
+	flag.StringVar(&cfg.CaptureDir, "capture-dir", envOr("SLEEPGUARD_CAPTURE_DIR", "data/captures"), "temp directory for camera stills")
+	flag.DurationVar(&cfg.CaptureTimeout, "capture-timeout", 30*time.Second, "max time for camera capture command")
 
 	flag.Parse()
 

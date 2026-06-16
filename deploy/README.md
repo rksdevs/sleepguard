@@ -196,6 +196,10 @@ curl -s "https://sleepguard.rksdevs.in/api/v1/events?device_id=nursery&limit=10"
 | POST | `/api/v1/heartbeat` | device token | Update last_seen |
 | GET | `/api/v1/events?device_id=&limit=` | read key or device token | List events |
 | GET | `/api/v1/devices/{id}/status` | read key or device token | Device status |
+| POST | `/api/v1/devices/{id}/capture` | read key | Queue manual snapshot (Pi must be online) |
+| GET | `/api/v1/snapshots?device_id=` | read key | List recent snapshots |
+| GET | `/api/v1/snapshots/{id}/image` | read key | JPEG bytes |
+| POST | `/api/v1/snapshots` | device token | Upload snapshot from Pi |
 | POST | `/api/v1/admin/cleanup` | read key | Purge old events/snapshots |
 | GET | `/api/v1/push/vapid-key` | none | VAPID public key for PWA |
 | POST | `/api/v1/pair` | read key | Register phone for push |
@@ -208,10 +212,16 @@ curl -s "https://sleepguard.rksdevs.in/api/v1/events?device_id=nursery&limit=10"
 
 ### VAPID keys (one-time)
 
-On the server (or any machine with Go):
+On the server or your dev PC (Node):
 
 ```bash
-go run github.com/SherClockHolmes/webpush-go/cmd/genkeys@latest
+npx web-push generate-vapid-keys
+```
+
+Or with Go from the repo root:
+
+```bash
+go run ./scripts/gen-vapid-keys.go
 ```
 
 Add to `deploy/.env`:
@@ -237,9 +247,79 @@ sudo nginx -t && sudo systemctl reload nginx
 
 1. Open PWA on your phone (Add to Home Screen).
 2. Tap **Enable notifications** and allow permission.
-3. Wave at the PIR — you should get a push within a few seconds on **rise** events.
+3. After **3 motion cycles** (rise→fall pairs), you get a push; again at 6, 9, etc.
 
 Manual cleanup from PWA: **Run cleanup now** (or `curl -X POST .../api/v1/admin/cleanup -H "Authorization: Bearer READ_KEY"`).
+
+---
+
+## Phase E — Pattern rules (push every 3 cycles)
+
+Server counts **rise → fall** as one motion cycle (hold/initial ignored).
+
+| Cycles | Action |
+|--------|--------|
+| 3, 6, 9… | Web Push: sustained motion alert |
+
+Optional `deploy/.env`:
+
+```bash
+SLEEPGUARD_RULE_NOTIFY_CYCLES=3
+SLEEPGUARD_RULE_IDLE_RESET=10m
+```
+
+---
+
+## Phase F — Manual camera capture
+
+User taps **Capture image** in the PWA (anytime; Pi must show **online**).
+
+```text
+PWA → POST /api/v1/devices/{id}/capture
+    → cloud queues command
+    → Pi heartbeat gets capture_snapshot: true
+    → libcamera-still (or raspistill) on Pi
+    → POST /api/v1/snapshots (multipart)
+    → PWA shows latest image
+```
+
+**Pi prerequisites:** Pi Camera v2 on CSI; install `rpicam-apps` (or `libcamera-apps` on older images). On recent Pi OS use **`rpicam-still`**, not `libcamera-still`:
+
+```bash
+sudo apt install -y rpicam-apps
+rpicam-hello --list-cameras    # should show imx219
+rpicam-still -o ~/test.jpg -n -t 2000
+```
+
+Deploy:
+
+```bash
+# Hetzner
+cd /data/sleepguard && git pull
+docker compose -f deploy/docker-compose.yml up -d --build
+bash deploy/build-pwa.sh
+
+# Pi
+cd ~/sleepguard && git pull
+go build -o ~/sleepguard/bin/sleepguard-agent ./cmd/agent
+sudo systemctl restart sleepguard-agent
+```
+
+Test capture: open PWA → **Capture image** → wait up to ~60s (heartbeat) → image appears.
+
+Smoke test cycles (push):
+
+```bash
+for i in 1 2 3; do
+  curl -s -X POST https://sleepguard.rksdevs.in/api/v1/events \
+    -H "Authorization: Bearer DEVICE_TOKEN" -H "Content-Type: application/json" \
+    -d '{"type":"motion","state":"active","pattern":"rise"}'
+  curl -s -X POST https://sleepguard.rksdevs.in/api/v1/events \
+    -H "Authorization: Bearer DEVICE_TOKEN" -H "Content-Type: application/json" \
+    -d '{"type":"motion","state":"idle","pattern":"fall"}'
+done
+# → push on 3rd cycle
+```
 
 ## Local dev without Docker
 

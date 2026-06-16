@@ -1,8 +1,11 @@
 import {
   fetchEvents,
   fetchPairings,
+  fetchSnapshotBlob,
+  fetchSnapshots,
   fetchStatus,
   pairDevice,
+  requestCapture,
   runCleanup,
   unpairDevice,
 } from "./api";
@@ -90,6 +93,8 @@ interface DashboardView {
   events: MotionEvent[];
   pairings: PairedClient[];
   pairingId: string | null;
+  snapshotImageUrl: string | null;
+  latestSnapshotAt: string | null;
   error: string | null;
   notice: string | null;
 }
@@ -155,11 +160,29 @@ function renderDashboard(root: HTMLElement, view: DashboardView): void {
 
     <div class="card">
       <div class="toolbar" style="margin-bottom:0.5rem">
+        <span class="toolbar-title">Camera</span>
+      </div>
+      <p class="muted" style="margin-top:0">Capture a still from the nursery whenever you want (Pi must be online).</p>
+      <div class="actions">
+        <button type="button" id="capture-btn" ${view.status.online ? "" : "disabled"}>Capture image</button>
+      </div>
+      ${
+        view.snapshotImageUrl
+          ? `<figure class="snapshot-preview">
+        <img src="${view.snapshotImageUrl}" alt="Latest nursery snapshot" />
+        ${view.latestSnapshotAt ? `<figcaption class="muted">Latest — ${formatTime(view.latestSnapshotAt)}</figcaption>` : ""}
+      </figure>`
+          : `<p class="muted" style="margin:0">No snapshots yet.</p>`
+      }
+    </div>
+
+    <div class="card">
+      <div class="toolbar" style="margin-bottom:0.5rem">
         <span class="toolbar-title">Notifications</span>
       </div>
       ${
         pushOk
-          ? `<p class="muted" style="margin-top:0">Get alerted on your phone when motion rises.</p>
+          ? `<p class="muted" style="margin-top:0">Push alert every 3 motion cycles (3, 6, 9…). Tap Capture when you want a photo.</p>
       <div class="actions">
         ${
           pairedHere
@@ -205,6 +228,20 @@ function renderDashboard(root: HTMLElement, view: DashboardView): void {
     clearSettings();
     clearPairingId();
     window.location.reload();
+  });
+
+  root.querySelector("#capture-btn")?.addEventListener("click", () => {
+    void (async () => {
+      try {
+        await requestCapture(view.settings);
+        view.notice =
+          "Capture queued — image should appear within about a minute.";
+        view.error = null;
+      } catch (err) {
+        view.notice = err instanceof Error ? err.message : "Capture request failed.";
+      }
+      renderDashboard(root, view);
+    })();
   });
 
   root.querySelector("#pair-btn")?.addEventListener("click", () => {
@@ -273,16 +310,48 @@ export function mountApp(root: HTMLElement): void {
   let settings = loadSettings();
   let timer: number | undefined;
   let notice: string | null = null;
+  let snapshotImageUrl: string | null = null;
+  let cachedSnapshotId: string | null = null;
+
+  const loadLatestSnapshot = async (s: Settings): Promise<{
+    url: string | null;
+    capturedAt: string | null;
+  }> => {
+    const snaps = await fetchSnapshots(s, 1);
+    const latest = snaps[0];
+    if (!latest) {
+      if (snapshotImageUrl) {
+        URL.revokeObjectURL(snapshotImageUrl);
+        snapshotImageUrl = null;
+        cachedSnapshotId = null;
+      }
+      return { url: null, capturedAt: null };
+    }
+    if (latest.id === cachedSnapshotId && snapshotImageUrl) {
+      return { url: snapshotImageUrl, capturedAt: latest.captured_at };
+    }
+    const blob = await fetchSnapshotBlob(s, latest.id);
+    if (snapshotImageUrl) {
+      URL.revokeObjectURL(snapshotImageUrl);
+    }
+    snapshotImageUrl = URL.createObjectURL(blob);
+    cachedSnapshotId = latest.id;
+    return { url: snapshotImageUrl, capturedAt: latest.captured_at };
+  };
 
   const tick = async () => {
     if (!settings) {
       return;
     }
     try {
-      const [status, { events }, pairings] = await Promise.all([
+      const [status, { events }, pairings, snapshot] = await Promise.all([
         fetchStatus(settings),
         fetchEvents(settings),
         fetchPairings(settings).catch(() => [] as PairedClient[]),
+        loadLatestSnapshot(settings).catch(() => ({
+          url: snapshotImageUrl,
+          capturedAt: null,
+        })),
       ]);
       renderDashboard(root, {
         settings,
@@ -290,6 +359,8 @@ export function mountApp(root: HTMLElement): void {
         events,
         pairings,
         pairingId: loadPairingId(),
+        snapshotImageUrl: snapshot.url,
+        latestSnapshotAt: snapshot.capturedAt,
         error: null,
         notice,
       });
@@ -307,6 +378,8 @@ export function mountApp(root: HTMLElement): void {
         events: [],
         pairings: [],
         pairingId: loadPairingId(),
+        snapshotImageUrl,
+        latestSnapshotAt: null,
         error: message,
         notice,
       });

@@ -29,6 +29,8 @@ type Config struct {
 	VAPIDPublicKey       string
 	VAPIDPrivateKey      string
 	VAPIDSubject         string
+	RuleNotifyCycles int
+	RuleIdleReset    time.Duration
 }
 
 // Load parses flags and environment variables.
@@ -54,6 +56,8 @@ func Load() (Config, error) {
 	flag.StringVar(&cfg.VAPIDPublicKey, "vapid-public-key", os.Getenv("SLEEPGUARD_VAPID_PUBLIC_KEY"), "Web Push VAPID public key")
 	flag.StringVar(&cfg.VAPIDPrivateKey, "vapid-private-key", os.Getenv("SLEEPGUARD_VAPID_PRIVATE_KEY"), "Web Push VAPID private key")
 	flag.StringVar(&cfg.VAPIDSubject, "vapid-subject", envOr("SLEEPGUARD_VAPID_SUBJECT", "mailto:sleepguard@rksdevs.in"), "Web Push VAPID subject (mailto: or https:)")
+	flag.IntVar(&cfg.RuleNotifyCycles, "rule-notify-cycles", envInt("SLEEPGUARD_RULE_NOTIFY_CYCLES", 3), "push alert every N rise→fall cycles")
+	flag.DurationVar(&cfg.RuleIdleReset, "rule-idle-reset", envDuration("SLEEPGUARD_RULE_IDLE_RESET", 10*time.Minute), "reset cycle count after idle period")
 
 	flag.Parse()
 
@@ -94,4 +98,16 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
+}
+
+func envInt(key string, fallback int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	var n int
+	if _, err := fmt.Sscanf(v, "%d", &n); err != nil || n <= 0 {
+		return fallback
+	}
+	return n
 }

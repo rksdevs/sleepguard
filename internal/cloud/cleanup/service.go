@@ -46,11 +46,16 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	}
 	result.EventsDeleted = events
 
-	snaps, err := deleteOldSnapshots(s.snapshotDir, cutoff)
+	dbSnaps, err := s.store.DeleteSnapshotsOlderThan(ctx, cutoff)
 	if err != nil {
 		return result, err
 	}
-	result.SnapshotsDeleted = snaps
+
+	snaps, err := deleteOldSnapshotFiles(s.snapshotDir, cutoff)
+	if err != nil {
+		return result, err
+	}
+	result.SnapshotsDeleted = snaps + int(dbSnaps)
 
 	s.log.Info("cleanup complete",
 		"events_deleted", result.EventsDeleted,
@@ -60,32 +65,30 @@ func (s *Service) Run(ctx context.Context) (Result, error) {
 	return result, nil
 }
 
-func deleteOldSnapshots(dir string, cutoff time.Time) (int, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, err
-	}
-
+func deleteOldSnapshotFiles(dir string, cutoff time.Time) (int, error) {
 	var deleted int
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		path := filepath.Join(dir, entry.Name())
-		info, err := entry.Info()
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			continue
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
 		}
 		if info.ModTime().UTC().Before(cutoff) {
 			if err := os.Remove(path); err == nil {
 				deleted++
 			}
 		}
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return 0, nil
 	}
-	return deleted, nil
+	return deleted, err
 }
 
 // StartScheduler runs cleanup on an interval until ctx is cancelled.
